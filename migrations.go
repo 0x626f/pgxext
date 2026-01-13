@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Migration struct {
@@ -78,7 +77,7 @@ func UpMigrations(ctx context.Context, migrations MigrationSet) error {
 	return nil
 }
 
-func DownMigrations(ctx context.Context, config *pgxpool.Config, migrations MigrationSet) error {
+func DownMigrations(ctx context.Context, migrations MigrationSet) error {
 	PoolClient.WithContext(ctx).Instance()
 
 	var err error
