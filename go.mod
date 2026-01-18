@@ -3,7 +3,7 @@ module github.com/0x626f/pgxext
 go 1.25.5
 
 require (
-	github.com/0x626f/go-kit v0.0.0-20260112230005-680cd480388d
+	github.com/0x626f/go-kit v0.0.0-20260118125317-2d0cbfb0d0e8
 	github.com/jackc/pgx/v5 v5.8.0
 )
 

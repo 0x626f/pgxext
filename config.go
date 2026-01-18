@@ -7,10 +7,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	PGXEXTConfigKey = "PGXEXTConfigKey"
-)
-
 type Config struct {
 	URL                   string        `env:"URL"`
 	MaxConnections        int32         `env:"MAX_CONNECTIONS" default:"1"`
@@ -18,6 +14,7 @@ type Config struct {
 	MaxConnectionLifetime time.Duration `env:"MAX_CONNECTION_LIFETIME" default:"0"`
 	MaxConnectionIdleTime time.Duration `env:"MAX_CONNECTION_IDLE_TIME" default:"0"`
 	HealthCheckDelay      time.Duration `env:"HEALTH_CHECK_DELAY" default:"1m"`
+	Context               context.Context
 }
 
 func (config *Config) Convert() *pgxpool.Config {
@@ -33,8 +30,4 @@ func (config *Config) Convert() *pgxpool.Config {
 	poolConfig.HealthCheckPeriod = config.HealthCheckDelay
 
 	return poolConfig
-}
-
-func (config *Config) Context(parent context.Context) context.Context {
-	return context.WithValue(parent, PGXEXTConfigKey, config)
 }

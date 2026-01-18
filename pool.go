@@ -9,16 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var PoolClient = patterns.NewSingleton(func(ctx context.Context) *pgxpool.Pool {
-	config := ctx.Value(PGXEXTConfigKey).(*Config)
-
-	pool, err := pgxpool.NewWithConfig(ctx, config.Convert())
-
-	if err != nil {
-		panic(err)
+var PoolClient = patterns.NewConfigurableSingleton(func(config *Config) (*pgxpool.Pool, error) {
+	if config.Context == nil {
+		config.Context = context.Background()
 	}
 
-	return pool
+	pool, err := pgxpool.NewWithConfig(config.Context, config.Convert())
+
+	if err != nil {
+		return nil, err
+	}
+
+	return pool, nil
 })
 
 func Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
