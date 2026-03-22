@@ -1,33 +1,45 @@
-package pgxext
+// Package migration provides a simple transactional SQL migration runner
+// backed by a pgxext.DataSource. Applied migrations are recorded in a
+// "migrations" table so each script runs exactly once.
+package migration
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/0x626f/pgxext"
 	"github.com/jackc/pgx/v5"
 )
 
+// Migration holds the name and SQL scripts for a single schema change.
 type Migration struct {
 	Name      string
 	UpQuery   string
 	DownQuery string
 }
 
+// MigrationSet is an ordered slice of migrations.
 type MigrationSet []Migration
 
+// Migrator applies and reverts migrations against a DataSource.
 type Migrator struct {
-	ds  *DataSource
+	ds  *pgxext.DataSource
 	ctx context.Context
 }
 
-func NewMigrator(ctx context.Context, ds *DataSource) *Migrator {
+// NewMigrator creates a Migrator that runs all operations under ctx.
+func NewMigrator(ctx context.Context, ds *pgxext.DataSource) *Migrator {
 	return &Migrator{ds: ds, ctx: ctx}
 }
 
+// Join concatenates two MigrationSets into one.
 func (set MigrationSet) Join(arg MigrationSet) MigrationSet {
 	return append(set, arg...)
 }
 
+// Up applies all migrations that have not yet been recorded in the migrations
+// table. The entire batch runs inside a single transaction; any failure causes
+// a rollback and a panic.
 func (migrator *Migrator) Up(migrations MigrationSet) error {
 	var err error
 	var bundle pgx.Tx
@@ -84,6 +96,8 @@ func (migrator *Migrator) Up(migrations MigrationSet) error {
 	return nil
 }
 
+// Down reverts all migrations in reverse order, removing their records from
+// the migrations table. The entire batch runs inside a single transaction.
 func (migrator *Migrator) Down(migrations MigrationSet) error {
 	var err error
 	var bundle pgx.Tx

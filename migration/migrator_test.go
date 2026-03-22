@@ -1,10 +1,33 @@
-package pgxext
+package migration
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
+
+	"github.com/0x626f/pgxext"
 )
+
+// integrationDS returns a connected *pgxext.DataSource or skips the test if
+// TEST_DATABASE_URL is not set.
+func integrationDS(t *testing.T) *pgxext.DataSource {
+	t.Helper()
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	cfg := pgxext.NewConfig()
+	if _, err := cfg.WithURL(url); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	ds, err := pgxext.NewDataSource(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewDataSource: %v", err)
+	}
+	t.Cleanup(ds.Close)
+	return ds
+}
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -26,7 +49,7 @@ var testMigrations = MigrationSet{
 
 // cleanDB drops every table created by the test fixtures so each test starts
 // from a clean slate, regardless of whether a previous test left debris.
-func cleanDB(t *testing.T, ds *DataSource) {
+func cleanDB(t *testing.T, ds *pgxext.DataSource) {
 	t.Helper()
 	ctx := context.Background()
 	for _, stmt := range []string{
@@ -42,7 +65,7 @@ func cleanDB(t *testing.T, ds *DataSource) {
 
 // tableExists reports whether a table with the given name exists in the
 // current search_path.
-func tableExists(t *testing.T, ds *DataSource, table string) bool {
+func tableExists(t *testing.T, ds *pgxext.DataSource, table string) bool {
 	t.Helper()
 	row, err := ds.QueryRow(context.Background(),
 		"SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1)", table)
@@ -58,7 +81,7 @@ func tableExists(t *testing.T, ds *DataSource, table string) bool {
 
 // migrationRecorded reports whether a migration name exists in the migrations
 // tracking table.
-func migrationRecorded(t *testing.T, ds *DataSource, name string) bool {
+func migrationRecorded(t *testing.T, ds *pgxext.DataSource, name string) bool {
 	t.Helper()
 	row, err := ds.QueryRow(context.Background(),
 		"SELECT EXISTS(SELECT 1 FROM migrations WHERE name = $1)", name)

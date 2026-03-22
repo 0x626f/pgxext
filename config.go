@@ -20,6 +20,7 @@ type Config struct {
 	*pgxpool.Config
 }
 
+// NewConfig returns a Config initialised from an empty DSN via pgxpool.ParseConfig.
 func NewConfig() *Config {
 	cfg, err := pgxpool.ParseConfig("")
 	if err != nil {
