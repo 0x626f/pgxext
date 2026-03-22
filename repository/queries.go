@@ -144,13 +144,25 @@ func (query *SelectQuery[T]) Count(ctx context.Context) (int64, error) {
 
 // InsertQuery builds an INSERT statement for Repository[T].
 type InsertQuery[T any] struct {
-	repo *Repository[T]
-	sets []SetClause
+	repo             *Repository[T]
+	sets             []SetClause
+	conflictCols     []Property
+	updateOnConflict []Property
 }
 
 // Set adds a column value for the INSERT. p must be a mapped property of T.
 func (query *InsertQuery[T]) Set(prop Property, value any) *InsertQuery[T] {
 	query.sets = append(query.sets, SetClause{property: prop, value: value})
+	return query
+}
+
+// UpdateOnConflict adds an ON CONFLICT (...) DO UPDATE SET clause.
+// conflictCols identifies the unique constraint columns that trigger the
+// conflict; updateCols lists which columns to overwrite with their EXCLUDED
+// value. All columns must be mapped properties of T.
+func (query *InsertQuery[T]) UpdateOnConflict(conflictCols []Property, updateCols ...Property) *InsertQuery[T] {
+	query.conflictCols = conflictCols
+	query.updateOnConflict = updateCols
 	return query
 }
 
@@ -168,6 +180,12 @@ func (query *InsertQuery[T]) Execute(ctx context.Context) (int64, error) {
 	if err := query.repo.validateProperties(setProps); err != nil {
 		return 0, err
 	}
+	if err := query.repo.validateProperties(query.conflictCols); err != nil {
+		return 0, err
+	}
+	if err := query.repo.validateProperties(query.updateOnConflict); err != nil {
+		return 0, err
+	}
 
 	cols := make([]string, len(query.sets))
 	placeholders := make([]string, len(query.sets))
@@ -178,13 +196,25 @@ func (query *InsertQuery[T]) Execute(ctx context.Context) (int64, error) {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 	}
 
-	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "INSERT INTO %s (%s) VALUES (%s)",
 		query.repo.table,
 		strings.Join(cols, ", "),
 		strings.Join(placeholders, ", "),
 	)
 
-	tag, err := query.repo.DataSource.Exec(ctx, sql, args...)
+	if len(query.conflictCols) > 0 && len(query.updateOnConflict) > 0 {
+		setClauses := make([]string, len(query.updateOnConflict))
+		for i, col := range query.updateOnConflict {
+			setClauses[i] = fmt.Sprintf("%s = EXCLUDED.%s", col, col)
+		}
+		fmt.Fprintf(&sb, " ON CONFLICT (%s) DO UPDATE SET %s",
+			strings.Join(query.conflictCols, ", "),
+			strings.Join(setClauses, ", "),
+		)
+	}
+
+	tag, err := query.repo.DataSource.Exec(ctx, sb.String(), args...)
 	if err != nil {
 		return 0, err
 	}

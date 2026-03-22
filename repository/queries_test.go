@@ -819,6 +819,103 @@ func TestInsert_DuplicateColumns(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// UpdateOnConflict tests
+// ---------------------------------------------------------------------------
+
+func TestInsert_UpdateOnConflict_Updates(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	// test_repo_items has a unique constraint only on the serial PK (id).
+	// Use name as a de-facto unique key via a unique index created here.
+	ds.Exec(context.Background(), //nolint:errcheck
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_test_repo_items_name ON test_repo_items (name)")
+	t.Cleanup(func() {
+		ds.Exec(context.Background(), "DROP INDEX IF EXISTS uq_test_repo_items_name") //nolint:errcheck
+	})
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// First insert.
+	if _, err := repo.Insert().
+		Set("name", "alice").Set("score", 10).Set("category", "eng").
+		Execute(context.Background()); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+
+	// Second insert with conflict on name → update score and category.
+	affected, err := repo.Insert().
+		Set("name", "alice").Set("score", 99).Set("category", "ops").
+		UpdateOnConflict([]Property{"name"}, "score", "category").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("rows affected = %d, want 1", affected)
+	}
+
+	rows, err := repo.Select().Where("name", Equals, "alice").Execute(context.Background())
+	if err != nil {
+		t.Fatalf("select after upsert: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Score != 99 || rows[0].Category != "ops" {
+		t.Fatalf("unexpected row after upsert: %+v", rows)
+	}
+}
+
+func TestInsert_UpdateOnConflict_NoConflict(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	ds.Exec(context.Background(), //nolint:errcheck
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_test_repo_items_name ON test_repo_items (name)")
+	t.Cleanup(func() {
+		ds.Exec(context.Background(), "DROP INDEX IF EXISTS uq_test_repo_items_name") //nolint:errcheck
+	})
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// No prior row — insert should succeed normally.
+	affected, err := repo.Insert().
+		Set("name", "bob").Set("score", 5).Set("category", "eng").
+		UpdateOnConflict([]Property{"name"}, "score", "category").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("upsert (no conflict): %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("rows affected = %d, want 1", affected)
+	}
+}
+
+func TestInsert_UpdateOnConflict_InvalidConflictCol(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	_, err := repo.Insert().
+		Set("name", "x").
+		UpdateOnConflict([]Property{"nonexistent"}, "score").
+		Execute(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown conflict column, got nil")
+	}
+}
+
+func TestInsert_UpdateOnConflict_InvalidUpdateCol(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	_, err := repo.Insert().
+		Set("name", "x").
+		UpdateOnConflict([]Property{"name"}, "nonexistent").
+		Execute(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown update column, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Count tests
 // ---------------------------------------------------------------------------
 
