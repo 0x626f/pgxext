@@ -31,7 +31,7 @@ func CollectRows[T any](rows pgx.Rows) ([]*T, error) {
 	return result, nil
 }
 
-func IsDBError(err error) (*pgconn.PgError, bool) {
+func IsPostgresError(err error) (*pgconn.PgError, bool) {
 	var dbError *pgconn.PgError
 	if errors.As(err, &dbError) {
 		return dbError, true
