@@ -24,8 +24,8 @@ type Repository[T any] struct {
 // NewRepository creates a Repository bound to DataSource and the given table name.
 // Type T is introspected once to populate properties following pgx's DataSource-tag rules:
 //   - Exported fields with no DataSource tag are included using the Go field name.
-//   - DataSource:"col"        → column name is "col" (options after comma are stripped).
-//   - DataSource:"-"          → field is skipped.
+//   - db:"col"        → column name is "col" (options after comma are stripped).
+//   - db:"-"          → field is skipped.
 //   - Anonymous embedded structs are recursed into (embedded pointers are not).
 //   - Unexported non-anonymous fields are skipped.
 func NewRepository[T any](source *pgxext.DataSource, table string) *Repository[T] {
@@ -105,7 +105,7 @@ func collectProperties(t reflect.Type, props []Property) []Property {
 			continue
 		}
 
-		dbTag, tagPresent := sf.Tag.Lookup("DataSource")
+		dbTag, tagPresent := sf.Tag.Lookup("db")
 		if tagPresent {
 			// Strip options: DataSource:"col,omitempty" → "col"
 			dbTag, _, _ = strings.Cut(dbTag, ",")

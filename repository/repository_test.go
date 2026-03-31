@@ -10,56 +10,56 @@ import (
 // ---------------------------------------------------------------------------
 
 type simpleStruct struct {
-	ID   int    `DataSource:"id"`
-	Name string `DataSource:"name"`
-	Age  int    `DataSource:"age"`
+	ID   int    `db:"id"`
+	Name string `db:"name"`
+	Age  int    `db:"age"`
 }
 
 type withOptions struct {
-	ID   int    `DataSource:"id,omitempty"`
-	Name string `DataSource:"name,omitempty"`
+	ID   int    `db:"id,omitempty"`
+	Name string `db:"name,omitempty"`
 }
 
 type withSkipped struct {
-	ID       int    `DataSource:"id"`
-	Internal string `DataSource:"-"`
-	Name     string `DataSource:"name"`
+	ID       int    `db:"id"`
+	Internal string `db:"-"`
+	Name     string `db:"name"`
 }
 
 type withNoTag struct {
-	ID   int    `DataSource:"id"`
+	ID   int    `db:"id"`
 	Name string // no tag → field name used
 }
 
 type unexportedFields struct {
-	ID       int    `DataSource:"id"`
-	internal string `DataSource:"internal"` //nolint:unused // intentionally unexported
+	ID       int    `db:"id"`
+	internal string `db:"internal"` //nolint:unused // intentionally unexported
 }
 
 type embeddedBase struct {
-	CreatedAt string `DataSource:"created_at"`
-	UpdatedAt string `DataSource:"updated_at"`
+	CreatedAt string `db:"created_at"`
+	UpdatedAt string `db:"updated_at"`
 }
 
 type withEmbedded struct {
-	ID   int    `DataSource:"id"`
-	Name string `DataSource:"name"`
+	ID   int    `db:"id"`
+	Name string `db:"name"`
 	embeddedBase
 }
 
 type deepEmbedded struct {
 	withEmbedded
-	Extra string `DataSource:"extra"`
+	Extra string `db:"extra"`
 }
 
 type withEmbeddedPointer struct {
-	ID            int `DataSource:"id"`
+	ID            int `db:"id"`
 	*embeddedBase     // embedded pointer — must NOT be recursed into
 }
 
 type allSkipped struct {
-	A string `DataSource:"-"`
-	B string `DataSource:"-"`
+	A string `db:"-"`
+	B string `db:"-"`
 }
 
 type empty struct{}
@@ -96,7 +96,7 @@ func TestInspect_ExplicitDBTag(t *testing.T) {
 }
 
 func TestInspect_TagOptionsStripped(t *testing.T) {
-	// DataSource:"col,omitempty" → column name must be "col", not "col,omitempty"
+	// db:"col,omitempty" → column name must be "col", not "col,omitempty"
 	got := inspectProperties(reflect.TypeOf(withOptions{}))
 	want := []Property{"id", "name"}
 	if !reflect.DeepEqual(got, want) {

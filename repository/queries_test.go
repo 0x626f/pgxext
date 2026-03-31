@@ -14,16 +14,16 @@ import (
 
 // testItem maps to the test_repo_items table created by setupDB.
 type testItem struct {
-	ID       int    `DataSource:"id"`
-	Name     string `DataSource:"name"`
-	Score    int    `DataSource:"score"`
-	Category string `DataSource:"category"`
+	ID       int    `db:"id"`
+	Name     string `db:"name"`
+	Score    int    `db:"score"`
+	Category string `db:"category"`
 }
 
 // testTag maps to the test_repo_tags table used in JOIN tests.
 type testTag struct {
-	ID    int    `DataSource:"id"`
-	Label string `DataSource:"label"`
+	ID    int    `db:"id"`
+	Label string `db:"label"`
 }
 
 const createItems = `
