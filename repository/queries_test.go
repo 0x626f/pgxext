@@ -1506,3 +1506,197 @@ func TestExists_IgnoresOrderByAndLimit(t *testing.T) {
 		t.Fatal("got false, want true")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// WITH (CTE) tests
+// ---------------------------------------------------------------------------
+
+func TestSelect_WithCTE(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+	insertItem(t, ds, "gamma", 30, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// CTE is defined and referenced via a JOIN to filter rows.
+	rows, err := repo.Select().
+		With("hi", "SELECT id FROM test_repo_items WHERE score >= 20").
+		Join("hi", "test_repo_items.id", Equals, "hi.id").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2 (score>=20)", len(rows))
+	}
+	for _, r := range rows {
+		if r.Score < 20 {
+			t.Fatalf("unexpected low-score row: %+v", r)
+		}
+	}
+}
+
+func TestSelect_WithMultipleCTEs(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 5, "a")
+	insertItem(t, ds, "beta", 15, "b")
+	insertItem(t, ds, "gamma", 25, "a")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// Two CTEs chained as JOINs; intersection is "gamma" (category 'a', score > 10).
+	rows, err := repo.Select().
+		With("cat_a", "SELECT id FROM test_repo_items WHERE category = 'a'").
+		With("hi_score", "SELECT id FROM test_repo_items WHERE score > 10").
+		Join("cat_a", "test_repo_items.id", Equals, "cat_a.id").
+		Join("hi_score", "test_repo_items.id", Equals, "hi_score.id").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "gamma" {
+		t.Fatalf("unexpected rows: %v", rows)
+	}
+}
+
+func TestSelect_WithRecursiveCTE(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "a", 1, "x")
+	insertItem(t, ds, "b", 2, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// Recursive CTE generates a series; verify WITH RECURSIVE is accepted.
+	rows, err := repo.Select().
+		WithRecursive("series", "SELECT 1 AS n UNION ALL SELECT n+1 FROM series WHERE n < 3").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute with RECURSIVE CTE: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+}
+
+func TestSelect_WithCTE_Count(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+	insertItem(t, ds, "gamma", 30, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	count, err := repo.Select().
+		With("hi", "SELECT id FROM test_repo_items WHERE score >= 20").
+		Join("hi", "test_repo_items.id", Equals, "hi.id").
+		Count(context.Background())
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("got %d, want 2", count)
+	}
+}
+
+func TestSelect_WithCTE_Exists(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 5, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// CTE finds high-scorers; none exist → Exists must be false.
+	exists, err := repo.Select().
+		With("hi", "SELECT id FROM test_repo_items WHERE score >= 100").
+		Join("hi", "test_repo_items.id", Equals, "hi.id").
+		Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if exists {
+		t.Fatal("got true, want false")
+	}
+}
+
+func TestUpdate_WithCTE(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// CTE is defined alongside a plain WHERE; verifies CTE is emitted correctly.
+	affected, err := repo.Update().
+		With("targets", "SELECT name FROM test_repo_items WHERE score < 15").
+		Set("category", "cheap").
+		Where("name", Equals, "alpha").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("rows affected = %d, want 1", affected)
+	}
+	rows, _ := repo.Select().Where("name", Equals, "alpha").Execute(context.Background())
+	if rows[0].Category != "cheap" {
+		t.Fatalf("category = %q, want cheap", rows[0].Category)
+	}
+}
+
+func TestDelete_WithCTE(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+	insertItem(t, ds, "gamma", 30, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// CTE defined alongside a plain WHERE; verifies CTE prefix is emitted.
+	affected, err := repo.Delete().
+		With("low", "SELECT id FROM test_repo_items WHERE score < 15").
+		Where("score", Less, 15).
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("rows affected = %d, want 1", affected)
+	}
+	rows, _ := repo.Select().Execute(context.Background())
+	if len(rows) != 2 {
+		t.Fatalf("got %d remaining rows, want 2", len(rows))
+	}
+	for _, r := range rows {
+		if r.Name == "alpha" {
+			t.Fatal("alpha (score<15) should have been deleted")
+		}
+	}
+}
+
+func TestDelete_WithRecursiveCTE(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "a", 1, "x")
+	insertItem(t, ds, "b", 2, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// WITH RECURSIVE keyword must be emitted; DELETE targets one row by name.
+	affected, err := repo.Delete().
+		WithRecursive("ids", "SELECT id FROM test_repo_items WHERE name = 'a' UNION ALL SELECT id FROM test_repo_items WHERE name = 'b'").
+		Where("name", Equals, "a").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("rows affected = %d, want 1", affected)
+	}
+}

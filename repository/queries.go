@@ -13,11 +13,25 @@ import (
 // SelectQuery builds a SELECT statement for Repository[T].
 type SelectQuery[T any] struct {
 	repo    *Repository[T]
+	ctes    []CTEClause
 	joins   []JoinClause
 	wheres  []WhereClause
 	orderBy Property
 	sortOpt SortOption
 	limit   uint
+}
+
+// With adds a CTE (common table expression). query is the raw SQL for the CTE body.
+func (query *SelectQuery[T]) With(name, sql string) *SelectQuery[T] {
+	query.ctes = append(query.ctes, CTEClause{name: name, query: sql})
+	return query
+}
+
+// WithRecursive adds a recursive CTE. The keyword RECURSIVE is emitted once if
+// any CTE in the query is marked recursive.
+func (query *SelectQuery[T]) WithRecursive(name, sql string) *SelectQuery[T] {
+	query.ctes = append(query.ctes, CTEClause{name: name, query: sql, recursive: true})
+	return query
 }
 
 // Where adds an AND condition. Qualified names (containing ".") bypass property
@@ -102,6 +116,11 @@ func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
 	var args []any
 	var sb strings.Builder
 
+	if cte := buildCTESQL(query.ctes); cte != "" {
+		sb.WriteString(cte)
+		sb.WriteByte(' ')
+	}
+
 	cols := query.repo.properties
 	if len(query.joins) > 0 {
 		qualified := make([]string, len(cols))
@@ -133,6 +152,10 @@ func (query *SelectQuery[T]) Exists(ctx context.Context) (bool, error) {
 	var args []any
 	var sb strings.Builder
 
+	if cte := buildCTESQL(query.ctes); cte != "" {
+		sb.WriteString(cte)
+		sb.WriteByte(' ')
+	}
 	sb.WriteString("SELECT EXISTS(SELECT 1")
 	query.buildFrom(&sb, &args)
 	sb.WriteString(")")
@@ -154,6 +177,10 @@ func (query *SelectQuery[T]) Count(ctx context.Context) (int64, error) {
 	var args []any
 	var sb strings.Builder
 
+	if cte := buildCTESQL(query.ctes); cte != "" {
+		sb.WriteString(cte)
+		sb.WriteByte(' ')
+	}
 	sb.WriteString("SELECT COUNT(*)")
 	query.buildFrom(&sb, &args)
 
@@ -254,8 +281,21 @@ func (query *InsertQuery[T]) Execute(ctx context.Context) (int64, error) {
 // UpdateQuery builds an UPDATE statement for Repository[T].
 type UpdateQuery[T any] struct {
 	repo   *Repository[T]
+	ctes   []CTEClause
 	sets   []SetClause
 	wheres []WhereClause
+}
+
+// With adds a CTE to the UPDATE statement.
+func (query *UpdateQuery[T]) With(name, sql string) *UpdateQuery[T] {
+	query.ctes = append(query.ctes, CTEClause{name: name, query: sql})
+	return query
+}
+
+// WithRecursive adds a recursive CTE to the UPDATE statement.
+func (query *UpdateQuery[T]) WithRecursive(name, sql string) *UpdateQuery[T] {
+	query.ctes = append(query.ctes, CTEClause{name: name, query: sql, recursive: true})
+	return query
 }
 
 // Set adds a SET p = v assignment. p must be a mapped property of T.
@@ -299,6 +339,10 @@ func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
 	}
 
 	var sb strings.Builder
+	if cte := buildCTESQL(query.ctes); cte != "" {
+		sb.WriteString(cte)
+		sb.WriteByte(' ')
+	}
 	fmt.Fprintf(&sb, "UPDATE %s SET %s", query.repo.table, strings.Join(setClauses, ", "))
 
 	if clause := buildWhereSQL(query.wheres, &args); clause != "" {
@@ -317,7 +361,20 @@ func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
 // DeleteQuery builds a DELETE statement for Repository[T].
 type DeleteQuery[T any] struct {
 	repo   *Repository[T]
+	ctes   []CTEClause
 	wheres []WhereClause
+}
+
+// With adds a CTE to the DELETE statement.
+func (q *DeleteQuery[T]) With(name, sql string) *DeleteQuery[T] {
+	q.ctes = append(q.ctes, CTEClause{name: name, query: sql})
+	return q
+}
+
+// WithRecursive adds a recursive CTE to the DELETE statement.
+func (q *DeleteQuery[T]) WithRecursive(name, sql string) *DeleteQuery[T] {
+	q.ctes = append(q.ctes, CTEClause{name: name, query: sql, recursive: true})
+	return q
 }
 
 // Where adds an AND condition.
@@ -337,6 +394,10 @@ func (q *DeleteQuery[T]) OrWhere(prop Property, op Operator, values ...any) *Del
 func (q *DeleteQuery[T]) Execute(ctx context.Context) (int64, error) {
 	var args []any
 	var sb strings.Builder
+	if cte := buildCTESQL(q.ctes); cte != "" {
+		sb.WriteString(cte)
+		sb.WriteByte(' ')
+	}
 	fmt.Fprintf(&sb, "DELETE FROM %s", q.repo.table)
 
 	if clause := buildWhereSQL(q.wheres, &args); clause != "" {
@@ -351,6 +412,30 @@ func (q *DeleteQuery[T]) Execute(ctx context.Context) (int64, error) {
 }
 
 // ── SQL helpers ───────────────────────────────────────────────────────────────
+
+// buildCTESQL renders "WITH [RECURSIVE] name AS (query), …" or empty string.
+// RECURSIVE is emitted once if any CTE in the list is marked recursive.
+func buildCTESQL(ctes []CTEClause) string {
+	if len(ctes) == 0 {
+		return ""
+	}
+	recursive := false
+	for _, c := range ctes {
+		if c.recursive {
+			recursive = true
+			break
+		}
+	}
+	parts := make([]string, len(ctes))
+	for i, c := range ctes {
+		parts[i] = c.name + " AS (" + c.query + ")"
+	}
+	keyword := "WITH "
+	if recursive {
+		keyword = "WITH RECURSIVE "
+	}
+	return keyword + strings.Join(parts, ", ")
+}
 
 // buildWhereSQL renders all clauses and returns the full "WHERE ..." string
 // (empty string if no clauses). Consecutive OR-flagged clauses are grouped in

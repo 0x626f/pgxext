@@ -139,3 +139,11 @@ type SetClause struct {
 	property Property
 	value    any
 }
+
+// CTEClause describes a single Common Table Expression (CTE).
+// recursive marks it for WITH RECURSIVE rendering.
+type CTEClause struct {
+	name      string
+	query     string
+	recursive bool
+}
