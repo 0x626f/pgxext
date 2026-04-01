@@ -1508,6 +1508,136 @@ func TestExists_IgnoresOrderByAndLimit(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// First tests
+// ---------------------------------------------------------------------------
+
+func TestFirst_EmptyTable(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	row, err := repo.Select().First(context.Background())
+	if err != nil {
+		t.Fatalf("First: %v", err)
+	}
+	if row != nil {
+		t.Fatalf("got %+v, want nil", row)
+	}
+}
+
+func TestFirst_SingleRow(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "only", 42, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	row, err := repo.Select().First(context.Background())
+	if err != nil {
+		t.Fatalf("First: %v", err)
+	}
+	if row == nil || row.Name != "only" {
+		t.Fatalf("got %+v, want {Name:only}", row)
+	}
+}
+
+func TestFirst_ReturnsOneOfMany(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "a", 1, "x")
+	insertItem(t, ds, "b", 2, "x")
+	insertItem(t, ds, "c", 3, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	row, err := repo.Select().First(context.Background())
+	if err != nil {
+		t.Fatalf("First: %v", err)
+	}
+	if row == nil {
+		t.Fatal("got nil, want a row")
+	}
+}
+
+func TestFirst_WithWhere_Matches(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	row, err := repo.Select().Where("name", Equals, "beta").First(context.Background())
+	if err != nil {
+		t.Fatalf("First: %v", err)
+	}
+	if row == nil || row.Name != "beta" {
+		t.Fatalf("got %+v, want {Name:beta}", row)
+	}
+}
+
+func TestFirst_WithWhere_NoMatch(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	row, err := repo.Select().Where("name", Equals, "ghost").First(context.Background())
+	if err != nil {
+		t.Fatalf("First: %v", err)
+	}
+	if row != nil {
+		t.Fatalf("got %+v, want nil", row)
+	}
+}
+
+func TestFirst_RespectsOrderBy(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "low", 5, "x")
+	insertItem(t, ds, "mid", 10, "x")
+	insertItem(t, ds, "high", 20, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+
+	first, err := repo.Select().OrderBy("score", ASC).First(context.Background())
+	if err != nil {
+		t.Fatalf("First ASC: %v", err)
+	}
+	if first == nil || first.Name != "low" {
+		t.Fatalf("ASC: got %+v, want {Name:low}", first)
+	}
+
+	last, err := repo.Select().OrderBy("score", DESC).First(context.Background())
+	if err != nil {
+		t.Fatalf("First DESC: %v", err)
+	}
+	if last == nil || last.Name != "high" {
+		t.Fatalf("DESC: got %+v, want {Name:high}", last)
+	}
+}
+
+func TestFirst_IgnoresLimit(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "a", 1, "x")
+	insertItem(t, ds, "b", 2, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// Limit set by caller is overridden — First always uses LIMIT 1.
+	row, err := repo.Select().Limit(10).First(context.Background())
+	if err != nil {
+		t.Fatalf("First: %v", err)
+	}
+	if row == nil {
+		t.Fatal("got nil, want a row")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // WITH (CTE) tests
 // ---------------------------------------------------------------------------
 

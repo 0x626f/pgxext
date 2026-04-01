@@ -110,9 +110,9 @@ func (query *SelectQuery[T]) buildFrom(sb *strings.Builder, args *[]any) {
 	}
 }
 
-// Execute builds and runs the SELECT query, always selecting all mapped columns.
-// Returns all matching rows scanned into []*T via pgx's DataSource-tag mapping.
-func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
+// buildSelectSQL assembles the SELECT … FROM … [JOIN] [WHERE] [ORDER BY] SQL
+// string and its parameterised arguments. limit=0 means no LIMIT clause.
+func (query *SelectQuery[T]) buildSelectSQL(limit uint) (string, []any) {
 	var args []any
 	var sb strings.Builder
 
@@ -135,15 +135,40 @@ func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
 	if query.orderBy != "" {
 		fmt.Fprintf(&sb, " ORDER BY %s %s", query.orderBy, query.sortOpt)
 	}
-	if query.limit > 0 {
-		fmt.Fprintf(&sb, " LIMIT %d", query.limit)
+	if limit > 0 {
+		fmt.Fprintf(&sb, " LIMIT %d", limit)
 	}
 
-	rows, err := query.repo.DataSource.Query(ctx, sb.String(), args...)
+	return sb.String(), args
+}
+
+// Execute builds and runs the SELECT query, always selecting all mapped columns.
+// Returns all matching rows scanned into []*T via pgx's DataSource-tag mapping.
+func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
+	sql, args := query.buildSelectSQL(query.limit)
+	rows, err := query.repo.DataSource.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[T])
+}
+
+// First builds and runs the SELECT query with LIMIT 1 and returns the single
+// matched row, or nil if no rows match. OrderBy is respected when set.
+func (query *SelectQuery[T]) First(ctx context.Context) (*T, error) {
+	sql, args := query.buildSelectSQL(1)
+	rows, err := query.repo.DataSource.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	results, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[T])
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, nil
+	}
+	return results[0], nil
 }
 
 // Exists builds and runs a SELECT EXISTS(...) query with the same joins and
