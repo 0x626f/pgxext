@@ -102,10 +102,12 @@ func (s SortOption) String() string {
 
 // WhereClause holds a single WHERE condition used in query builders.
 // values holds one element for scalar operators and multiple for In/NotIn.
+// or indicates this clause is OR-connected to the previous one (AND otherwise).
 type WhereClause struct {
 	property Property
 	op       Operator
 	values   []any
+	or       bool
 }
 
 // JoinClause describes a JOIN to another table.

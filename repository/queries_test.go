@@ -197,6 +197,56 @@ func TestSelect_MultipleWheres(t *testing.T) {
 	}
 }
 
+func TestSelect_OrWhere(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "y")
+	insertItem(t, ds, "gamma", 30, "z")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// WHERE name = 'alpha' OR name = 'gamma'
+	rows, err := repo.Select().
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "gamma").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+}
+
+func TestSelect_OrWhereWithAnd(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "y")
+	insertItem(t, ds, "gamma", 30, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// WHERE (name = 'alpha' OR name = 'gamma') AND category = 'x'
+	rows, err := repo.Select().
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "gamma").
+		Where("category", Equals, "x").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	for _, r := range rows {
+		if r.Category != "x" {
+			t.Fatalf("unexpected category %q, want x", r.Category)
+		}
+	}
+}
+
 func TestSelect_WhereIn(t *testing.T) {
 	ds := integrationDS(t)
 	setupDB(t, ds)
@@ -493,6 +543,68 @@ func TestUpdate_NoWhereUpdatesAll(t *testing.T) {
 	}
 }
 
+func TestUpdate_OrWhere(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+	insertItem(t, ds, "gamma", 30, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// UPDATE … SET category='y' WHERE name='alpha' OR name='gamma'
+	affected, err := repo.Update().
+		Set("category", "y").
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "gamma").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if affected != 2 {
+		t.Fatalf("rows affected = %d, want 2", affected)
+	}
+
+	rows, _ := repo.Select().Where("category", Equals, "y").Execute(context.Background())
+	if len(rows) != 2 {
+		t.Fatalf("got %d updated rows, want 2", len(rows))
+	}
+	// "beta" must be untouched
+	untouched, _ := repo.Select().Where("name", Equals, "beta").Execute(context.Background())
+	if len(untouched) != 1 || untouched[0].Category != "x" {
+		t.Fatalf("beta should not have been updated: %+v", untouched)
+	}
+}
+
+func TestUpdate_OrWhereWithAnd(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "keep")
+	insertItem(t, ds, "beta", 20, "keep")
+	insertItem(t, ds, "gamma", 30, "keep")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// WHERE (name='alpha' OR name='gamma') AND score > 15  → only gamma matches
+	affected, err := repo.Update().
+		Set("category", "changed").
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "gamma").
+		Where("score", Greeter, 15).
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("rows affected = %d, want 1", affected)
+	}
+
+	rows, _ := repo.Select().Where("name", Equals, "gamma").Execute(context.Background())
+	if len(rows) != 1 || rows[0].Category != "changed" {
+		t.Fatalf("expected gamma.category=changed, got %+v", rows)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Delete tests
 // ---------------------------------------------------------------------------
@@ -588,6 +700,101 @@ func TestDelete_WhereIn(t *testing.T) {
 	rows, _ := repo.Select().Execute(context.Background())
 	if len(rows) != 1 || rows[0].Name != "b" {
 		t.Fatalf("unexpected remaining rows: %v", rows)
+	}
+}
+
+func TestDelete_OrWhere(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+	insertItem(t, ds, "gamma", 30, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// DELETE … WHERE name='alpha' OR name='gamma'
+	affected, err := repo.Delete().
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "gamma").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if affected != 2 {
+		t.Fatalf("rows affected = %d, want 2", affected)
+	}
+
+	rows, _ := repo.Select().Execute(context.Background())
+	if len(rows) != 1 || rows[0].Name != "beta" {
+		t.Fatalf("unexpected remaining rows: %v", rows)
+	}
+}
+
+func TestDelete_OrWhereWithAnd(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "keep")
+	insertItem(t, ds, "beta", 20, "keep")
+	insertItem(t, ds, "gamma", 30, "remove")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// WHERE (name='alpha' OR name='gamma') AND category='remove' → only gamma
+	affected, err := repo.Delete().
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "gamma").
+		Where("category", Equals, "remove").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("rows affected = %d, want 1", affected)
+	}
+
+	rows, _ := repo.Select().Execute(context.Background())
+	if len(rows) != 2 {
+		t.Fatalf("got %d remaining rows, want 2", len(rows))
+	}
+	for _, r := range rows {
+		if r.Name == "gamma" {
+			t.Fatal("gamma should have been deleted")
+		}
+	}
+}
+
+func TestDelete_MultipleOrGroups(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "a")
+	insertItem(t, ds, "beta", 20, "b")
+	insertItem(t, ds, "gamma", 30, "a")
+	insertItem(t, ds, "delta", 40, "b")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// WHERE (name='alpha' OR name='beta') AND (category='a' OR category='b')
+	// All four rows match, but only alpha+gamma have category 'a' and
+	// only beta+delta have category 'b'; combined the AND of two OR groups
+	// selects all four rows.
+	affected, err := repo.Delete().
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "beta").
+		Where("category", Equals, "a").
+		OrWhere("category", Equals, "b").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	// (alpha OR beta) AND (a OR b):
+	// alpha→a ✓, beta→b ✓ → 2 rows deleted
+	if affected != 2 {
+		t.Fatalf("rows affected = %d, want 2", affected)
+	}
+
+	remaining, _ := repo.Select().Execute(context.Background())
+	if len(remaining) != 2 {
+		t.Fatalf("got %d remaining rows, want 2", len(remaining))
 	}
 }
 

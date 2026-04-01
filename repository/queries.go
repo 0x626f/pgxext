@@ -27,6 +27,13 @@ func (query *SelectQuery[T]) Where(prop Property, op Operator, values ...any) *S
 	return query
 }
 
+// OrWhere adds an OR condition. Consecutive OrWhere calls (and the preceding
+// Where call) are grouped in parentheses: (a OR b OR c).
+func (query *SelectQuery[T]) OrWhere(prop Property, op Operator, values ...any) *SelectQuery[T] {
+	query.wheres = append(query.wheres, WhereClause{property: prop, op: op, values: values, or: true})
+	return query
+}
+
 // Join adds an INNER JOIN clause. on and value are column references
 // (e.g. "users.id", "orders.user_id"). An optional alias renders as
 // "table AS alias", which is required when joining the same table more than once.
@@ -242,6 +249,12 @@ func (query *UpdateQuery[T]) Where(prop Property, op Operator, values ...any) *U
 	return query
 }
 
+// OrWhere adds an OR condition. See SelectQuery.OrWhere for grouping semantics.
+func (query *UpdateQuery[T]) OrWhere(prop Property, op Operator, values ...any) *UpdateQuery[T] {
+	query.wheres = append(query.wheres, WhereClause{property: prop, op: op, values: values, or: true})
+	return query
+}
+
 // Execute validates, builds, and runs the UPDATE query.
 // Returns the number of rows affected.
 func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
@@ -292,6 +305,12 @@ func (q *DeleteQuery[T]) Where(prop Property, op Operator, values ...any) *Delet
 	return q
 }
 
+// OrWhere adds an OR condition. See SelectQuery.OrWhere for grouping semantics.
+func (q *DeleteQuery[T]) OrWhere(prop Property, op Operator, values ...any) *DeleteQuery[T] {
+	q.wheres = append(q.wheres, WhereClause{property: prop, op: op, values: values, or: true})
+	return q
+}
+
 // Execute validates, builds, and runs the DELETE query.
 // Returns the number of rows affected.
 func (q *DeleteQuery[T]) Execute(ctx context.Context) (int64, error) {
@@ -312,17 +331,43 @@ func (q *DeleteQuery[T]) Execute(ctx context.Context) (int64, error) {
 
 // ── SQL helpers ───────────────────────────────────────────────────────────────
 
-// buildWhereSQL renders all clauses joined with AND and returns the full
-// "WHERE ..." string (empty string if no clauses).
+// buildWhereSQL renders all clauses and returns the full "WHERE ..." string
+// (empty string if no clauses). Consecutive OR-flagged clauses are grouped in
+// parentheses and joined with OR; groups are then joined with AND.
+//
+// Example: Where(a).OrWhere(b).OrWhere(c).Where(d) →
+//
+//	WHERE (a OR b OR c) AND d
 func buildWhereSQL(wheres []WhereClause, args *[]any) string {
 	if len(wheres) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(wheres))
+
+	// Split into AND-separated groups; each group holds one or more clauses
+	// joined by OR (a new group starts whenever or==false).
+	type group []WhereClause
+	var groups []group
 	for _, w := range wheres {
-		parts = append(parts, whereClauseSQL(w, args))
+		if !w.or || len(groups) == 0 {
+			groups = append(groups, group{w})
+		} else {
+			groups[len(groups)-1] = append(groups[len(groups)-1], w)
+		}
 	}
-	return "WHERE " + strings.Join(parts, " AND ")
+
+	andParts := make([]string, len(groups))
+	for i, g := range groups {
+		if len(g) == 1 {
+			andParts[i] = whereClauseSQL(g[0], args)
+		} else {
+			orParts := make([]string, len(g))
+			for j, w := range g {
+				orParts[j] = whereClauseSQL(w, args)
+			}
+			andParts[i] = "(" + strings.Join(orParts, " OR ") + ")"
+		}
+	}
+	return "WHERE " + strings.Join(andParts, " AND ")
 }
 
 // whereClauseSQL renders a single WhereClause, appending parameterised values
