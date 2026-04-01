@@ -23,6 +23,12 @@ const (
 	NotIn                          // NOT IN
 	IsNull                         // IS NULL
 	IsNotNull                      // IS NOT NULL
+	RegexMatch                     // ~   (case-sensitive)
+	RegexIMatch                    // ~*  (case-insensitive)
+	NotRegexMatch                  // !~  (case-sensitive)
+	NotRegexIMatch                 // !~* (case-insensitive)
+	SimilarTo                      // SIMILAR TO
+	NotSimilarTo                   // NOT SIMILAR TO
 )
 
 // operatorStrings maps each Operator constant to its SQL representation.
@@ -39,6 +45,12 @@ var operatorStrings = [...]string{
 	NotIn:          "NOT IN",
 	IsNull:         "IS NULL",
 	IsNotNull:      "IS NOT NULL",
+	RegexMatch:     "~",
+	RegexIMatch:    "~*",
+	NotRegexMatch:  "!~",
+	NotRegexIMatch: "!~*",
+	SimilarTo:      "SIMILAR TO",
+	NotSimilarTo:   "NOT SIMILAR TO",
 }
 
 func (op Operator) String() string {

@@ -963,6 +963,119 @@ func TestSelect_WhereIsNotNull(t *testing.T) {
 	}
 }
 
+func TestSelect_WhereRegexMatch(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "foobar", 1, "x")
+	insertItem(t, ds, "FooBar", 2, "x")
+	insertItem(t, ds, "other", 3, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// ~ is case-sensitive: only "foobar" matches
+	rows, err := repo.Select().Where("name", RegexMatch, "^foo").Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "foobar" {
+		t.Fatalf("unexpected rows: %v", rows)
+	}
+}
+
+func TestSelect_WhereRegexIMatch(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "foobar", 1, "x")
+	insertItem(t, ds, "FooBar", 2, "x")
+	insertItem(t, ds, "other", 3, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// ~* is case-insensitive: both "foobar" and "FooBar" match
+	rows, err := repo.Select().Where("name", RegexIMatch, "^foo").Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+}
+
+func TestSelect_WhereNotRegexMatch(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "foobar", 1, "x")
+	insertItem(t, ds, "other", 2, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// !~ excludes matching rows (case-sensitive)
+	rows, err := repo.Select().Where("name", NotRegexMatch, "^foo").Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "other" {
+		t.Fatalf("unexpected rows: %v", rows)
+	}
+}
+
+func TestSelect_WhereNotRegexIMatch(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "foobar", 1, "x")
+	insertItem(t, ds, "FooBar", 2, "x")
+	insertItem(t, ds, "other", 3, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// !~* excludes matching rows (case-insensitive): only "other" survives
+	rows, err := repo.Select().Where("name", NotRegexIMatch, "^foo").Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "other" {
+		t.Fatalf("unexpected rows: %v", rows)
+	}
+}
+
+func TestSelect_WhereSimilarTo(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "foobar", 1, "x")
+	insertItem(t, ds, "foobaz", 2, "x")
+	insertItem(t, ds, "other", 3, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// SIMILAR TO uses SQL regex syntax: foo(bar|baz) matches both foo-prefixed names
+	rows, err := repo.Select().Where("name", SimilarTo, "foo(bar|baz)").Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+}
+
+func TestSelect_WhereNotSimilarTo(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "foobar", 1, "x")
+	insertItem(t, ds, "foobaz", 2, "x")
+	insertItem(t, ds, "other", 3, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// NOT SIMILAR TO: only "other" does not match
+	rows, err := repo.Select().Where("name", NotSimilarTo, "foo(bar|baz)").Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "other" {
+		t.Fatalf("unexpected rows: %v", rows)
+	}
+}
+
 func TestSelect_AliasedJoin(t *testing.T) {
 	ds := integrationDS(t)
 	setupDB(t, ds)
