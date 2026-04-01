@@ -1255,3 +1255,141 @@ func TestCount_IgnoresOrderByAndLimit(t *testing.T) {
 		t.Fatalf("got %d, want 5 (Limit must be ignored by Count)", count)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Exists tests
+// ---------------------------------------------------------------------------
+
+func TestExists_EmptyTable(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	exists, err := repo.Select().Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if exists {
+		t.Fatal("got true, want false for empty table")
+	}
+}
+
+func TestExists_RowPresent(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	exists, err := repo.Select().Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if !exists {
+		t.Fatal("got false, want true")
+	}
+}
+
+func TestExists_WithMatchingWhere(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "y")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	exists, err := repo.Select().Where("name", Equals, "alpha").Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if !exists {
+		t.Fatal("got false, want true")
+	}
+}
+
+func TestExists_WithNonMatchingWhere(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	exists, err := repo.Select().Where("name", Equals, "ghost").Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if exists {
+		t.Fatal("got true, want false")
+	}
+}
+
+func TestExists_WithOrWhere(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "alpha", 10, "x")
+	insertItem(t, ds, "beta", 20, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	// Neither "ghost" nor "phantom" exist — should be false.
+	exists, err := repo.Select().
+		Where("name", Equals, "ghost").
+		OrWhere("name", Equals, "phantom").
+		Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if exists {
+		t.Fatal("got true, want false")
+	}
+
+	// "alpha" or "beta" both exist — should be true.
+	exists, err = repo.Select().
+		Where("name", Equals, "alpha").
+		OrWhere("name", Equals, "beta").
+		Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if !exists {
+		t.Fatal("got false, want true")
+	}
+}
+
+func TestExists_WithJoin(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "matched", 1, "go")
+	insertItem(t, ds, "unmatched", 2, "rust")
+	insertTag(t, ds, "go")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	exists, err := repo.Select().
+		Join("test_repo_tags", "test_repo_items.category", Equals, "test_repo_tags.label").
+		Where("test_repo_tags.label", Equals, "go").
+		Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if !exists {
+		t.Fatal("got false, want true")
+	}
+}
+
+func TestExists_IgnoresOrderByAndLimit(t *testing.T) {
+	ds := integrationDS(t)
+	setupDB(t, ds)
+
+	insertItem(t, ds, "a", 1, "x")
+	insertItem(t, ds, "b", 2, "x")
+
+	repo := NewRepository[testItem](ds, "test_repo_items")
+	exists, err := repo.Select().OrderBy("score", DESC).Limit(1).Exists(context.Background())
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if !exists {
+		t.Fatal("got false, want true")
+	}
+}

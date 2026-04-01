@@ -127,6 +127,27 @@ func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
 	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[T])
 }
 
+// Exists builds and runs a SELECT EXISTS(...) query with the same joins and
+// WHERE clauses as Execute. ORDER BY and LIMIT are ignored.
+func (query *SelectQuery[T]) Exists(ctx context.Context) (bool, error) {
+	var args []any
+	var sb strings.Builder
+
+	sb.WriteString("SELECT EXISTS(SELECT 1")
+	query.buildFrom(&sb, &args)
+	sb.WriteString(")")
+
+	row, err := query.repo.DataSource.QueryRow(ctx, sb.String(), args...)
+	if err != nil {
+		return false, err
+	}
+	var exists bool
+	if err := row.Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 // Count builds and runs a SELECT COUNT(*) query with the same joins and WHERE
 // clauses as Execute. ORDER BY and LIMIT are ignored.
 func (query *SelectQuery[T]) Count(ctx context.Context) (int64, error) {
