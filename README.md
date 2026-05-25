@@ -26,6 +26,7 @@
 - **DataSource** — a `*pgxpool.Pool` wrapper exposing `Query`, `Exec`, `QueryRow`, transactions, and batch operations.
 - **Migration** — transactional SQL migration runner backed by a `migrations` table.
 - **Repository** — generic, type-safe query builder (SELECT / INSERT / UPDATE / DELETE) with JOIN and COUNT support.
+- **Notification** — trigger builder and LISTEN consumer for JSON PostgreSQL notifications.
 
 ---
 
@@ -144,6 +145,48 @@ rows, err := repo.Select().
     Join("orders", "users.id", repository.Equals, "orders.user_id").
     Where("orders.status", repository.Equals, "paid").
     Execute(ctx)
+```
+
+### Notifications
+
+Create a trigger that sends JSON payloads on selected row operations:
+
+```go
+notificationSQL := notification.NewNotification("users", "user.changed").
+    On(notification.Insert, notification.Update, notification.Delete).
+    WithPayloadProperties(
+        notification.FromState,
+        notification.ToState,
+        notification.TableName,
+        notification.RowID,
+        notification.CreatedAt,
+    )
+
+err := notificationSQL.Apply(ctx, ds)
+```
+
+The generated payload uses these top-level properties:
+
+```json
+{
+  "fromState": {},
+  "toState": {},
+  "tableName": "users",
+  "rowId": 42,
+  "createdAt": "2026-05-25T12:00:00Z"
+}
+```
+
+Use `EmptyPayload()` or omit `WithPayloadProperties` to emit `{}`.
+
+Consume notifications with a dedicated LISTEN connection:
+
+```go
+consumer := notification.NewConsumer(ds, "user.changed")
+err := consumer.Listen(ctx, func(ctx context.Context, event notification.Event) error {
+    fmt.Println(event.Payload.TableName, event.Payload.RowID)
+    return nil
+})
 ```
 
 ### Utilities
