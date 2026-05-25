@@ -94,7 +94,7 @@ func (query *SelectQuery[T]) Limit(n uint) *SelectQuery[T] {
 
 // buildFrom writes "FROM table [JOIN …] [WHERE …]" into sb and appends
 // parameterised WHERE values to args. It is shared by Execute and Count.
-func (query *SelectQuery[T]) buildFrom(sb *strings.Builder, args *[]any) {
+func (query *SelectQuery[T]) buildFrom(sb *strings.Builder, args *[]any) error {
 	fmt.Fprintf(sb, " FROM %s", query.repo.table)
 
 	for _, j := range query.joins {
@@ -105,16 +105,23 @@ func (query *SelectQuery[T]) buildFrom(sb *strings.Builder, args *[]any) {
 		fmt.Fprintf(sb, " %s JOIN %s ON %s %s %s", j.kind, tableRef, j.on, j.op, j.value)
 	}
 
-	if clause := buildWhereSQL(query.wheres, args); clause != "" {
+	if clause, err := buildWhereSQL(query.wheres, args); err != nil {
+		return err
+	} else if clause != "" {
 		fmt.Fprintf(sb, " %s", clause)
 	}
+	return nil
 }
 
 // buildSelectSQL assembles the SELECT … FROM … [JOIN] [WHERE] [ORDER BY] SQL
 // string and its parameterised arguments. limit=0 means no LIMIT clause.
-func (query *SelectQuery[T]) buildSelectSQL(limit uint) (string, []any) {
+func (query *SelectQuery[T]) buildSelectSQL(limit uint) (string, []any, error) {
 	var args []any
 	var sb strings.Builder
+
+	if err := query.validate(); err != nil {
+		return "", nil, err
+	}
 
 	if cte := buildCTESQL(query.ctes); cte != "" {
 		sb.WriteString(cte)
@@ -130,7 +137,9 @@ func (query *SelectQuery[T]) buildSelectSQL(limit uint) (string, []any) {
 		cols = qualified
 	}
 	fmt.Fprintf(&sb, "SELECT %s", strings.Join(cols, ", "))
-	query.buildFrom(&sb, &args)
+	if err := query.buildFrom(&sb, &args); err != nil {
+		return "", nil, err
+	}
 
 	if query.orderBy != "" {
 		fmt.Fprintf(&sb, " ORDER BY %s %s", query.orderBy, query.sortOpt)
@@ -139,13 +148,25 @@ func (query *SelectQuery[T]) buildSelectSQL(limit uint) (string, []any) {
 		fmt.Fprintf(&sb, " LIMIT %d", limit)
 	}
 
-	return sb.String(), args
+	return sb.String(), args, nil
+}
+
+func (query *SelectQuery[T]) validate() error {
+	if query.orderBy != "" {
+		if err := query.repo.validateProperties([]Property{query.orderBy}); err != nil {
+			return err
+		}
+	}
+	return query.repo.validateProperties(whereProperties(query.wheres))
 }
 
 // Execute builds and runs the SELECT query, always selecting all mapped columns.
 // Returns all matching rows scanned into []*T via pgx's DataSource-tag mapping.
 func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
-	sql, args := query.buildSelectSQL(query.limit)
+	sql, args, err := query.buildSelectSQL(query.limit)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := query.repo.DataSource.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -156,7 +177,10 @@ func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
 // First builds and runs the SELECT query with LIMIT 1 and returns the single
 // matched row, or nil if no rows match. OrderBy is respected when set.
 func (query *SelectQuery[T]) First(ctx context.Context) (*T, error) {
-	sql, args := query.buildSelectSQL(1)
+	sql, args, err := query.buildSelectSQL(1)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := query.repo.DataSource.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -177,12 +201,18 @@ func (query *SelectQuery[T]) Exists(ctx context.Context) (bool, error) {
 	var args []any
 	var sb strings.Builder
 
+	if err := query.validate(); err != nil {
+		return false, err
+	}
+
 	if cte := buildCTESQL(query.ctes); cte != "" {
 		sb.WriteString(cte)
 		sb.WriteByte(' ')
 	}
 	sb.WriteString("SELECT EXISTS(SELECT 1")
-	query.buildFrom(&sb, &args)
+	if err := query.buildFrom(&sb, &args); err != nil {
+		return false, err
+	}
 	sb.WriteString(")")
 
 	row, err := query.repo.DataSource.QueryRow(ctx, sb.String(), args...)
@@ -202,12 +232,18 @@ func (query *SelectQuery[T]) Count(ctx context.Context) (int64, error) {
 	var args []any
 	var sb strings.Builder
 
+	if err := query.validate(); err != nil {
+		return 0, err
+	}
+
 	if cte := buildCTESQL(query.ctes); cte != "" {
 		sb.WriteString(cte)
 		sb.WriteByte(' ')
 	}
 	sb.WriteString("SELECT COUNT(*)")
-	query.buildFrom(&sb, &args)
+	if err := query.buildFrom(&sb, &args); err != nil {
+		return 0, err
+	}
 
 	row, err := query.repo.DataSource.QueryRow(ctx, sb.String(), args...)
 	if err != nil {
@@ -345,7 +381,7 @@ func (query *UpdateQuery[T]) OrWhere(prop Property, op Operator, values ...any) 
 // Returns the number of rows affected.
 func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
 	if len(query.sets) == 0 {
-		return 0, fmt.Errorf("repository: no SET clauses for UPDATE on table %query", query.repo.table)
+		return 0, fmt.Errorf("repository: no SET clauses for UPDATE on table %q", query.repo.table)
 	}
 
 	setProps := make([]Property, len(query.sets))
@@ -353,6 +389,9 @@ func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
 		setProps[i] = s.property
 	}
 	if err := query.repo.validateProperties(setProps); err != nil {
+		return 0, err
+	}
+	if err := query.repo.validateProperties(whereProperties(query.wheres)); err != nil {
 		return 0, err
 	}
 
@@ -370,7 +409,9 @@ func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
 	}
 	fmt.Fprintf(&sb, "UPDATE %s SET %s", query.repo.table, strings.Join(setClauses, ", "))
 
-	if clause := buildWhereSQL(query.wheres, &args); clause != "" {
+	if clause, err := buildWhereSQL(query.wheres, &args); err != nil {
+		return 0, err
+	} else if clause != "" {
 		fmt.Fprintf(&sb, " %s", clause)
 	}
 
@@ -419,13 +460,18 @@ func (q *DeleteQuery[T]) OrWhere(prop Property, op Operator, values ...any) *Del
 func (q *DeleteQuery[T]) Execute(ctx context.Context) (int64, error) {
 	var args []any
 	var sb strings.Builder
+	if err := q.repo.validateProperties(whereProperties(q.wheres)); err != nil {
+		return 0, err
+	}
 	if cte := buildCTESQL(q.ctes); cte != "" {
 		sb.WriteString(cte)
 		sb.WriteByte(' ')
 	}
 	fmt.Fprintf(&sb, "DELETE FROM %s", q.repo.table)
 
-	if clause := buildWhereSQL(q.wheres, &args); clause != "" {
+	if clause, err := buildWhereSQL(q.wheres, &args); err != nil {
+		return 0, err
+	} else if clause != "" {
 		fmt.Fprintf(&sb, " %s", clause)
 	}
 
@@ -469,9 +515,9 @@ func buildCTESQL(ctes []CTEClause) string {
 // Example: Where(a).OrWhere(b).OrWhere(c).Where(d) →
 //
 //	WHERE (a OR b OR c) AND d
-func buildWhereSQL(wheres []WhereClause, args *[]any) string {
+func buildWhereSQL(wheres []WhereClause, args *[]any) (string, error) {
 	if len(wheres) == 0 {
-		return ""
+		return "", nil
 	}
 
 	// Split into AND-separated groups; each group holds one or more clauses
@@ -489,38 +535,60 @@ func buildWhereSQL(wheres []WhereClause, args *[]any) string {
 	andParts := make([]string, len(groups))
 	for i, g := range groups {
 		if len(g) == 1 {
-			andParts[i] = whereClauseSQL(g[0], args)
+			sql, err := whereClauseSQL(g[0], args)
+			if err != nil {
+				return "", err
+			}
+			andParts[i] = sql
 		} else {
 			orParts := make([]string, len(g))
 			for j, w := range g {
-				orParts[j] = whereClauseSQL(w, args)
+				sql, err := whereClauseSQL(w, args)
+				if err != nil {
+					return "", err
+				}
+				orParts[j] = sql
 			}
 			andParts[i] = "(" + strings.Join(orParts, " OR ") + ")"
 		}
 	}
-	return "WHERE " + strings.Join(andParts, " AND ")
+	return "WHERE " + strings.Join(andParts, " AND "), nil
 }
 
 // whereClauseSQL renders a single WhereClause, appending parameterised values
 // to args and using $n placeholders.
-func whereClauseSQL(w WhereClause, args *[]any) string {
+func whereClauseSQL(w WhereClause, args *[]any) (string, error) {
 	switch w.op {
 	case IsNull, IsNotNull:
-		return w.property + " " + w.op.String()
+		return w.property + " " + w.op.String(), nil
 
 	case In, NotIn:
 		if len(w.values) == 0 {
-			return fmt.Sprintf("%s = $%d", w.property, len(*args)+1)
+			if w.op == In {
+				return "FALSE", nil
+			}
+			return "TRUE", nil
 		}
 		ph := make([]string, len(w.values))
 		for i, v := range w.values {
 			*args = append(*args, v)
 			ph[i] = fmt.Sprintf("$%d", len(*args))
 		}
-		return fmt.Sprintf("%s %s (%s)", w.property, w.op, strings.Join(ph, ", "))
+		return fmt.Sprintf("%s %s (%s)", w.property, w.op, strings.Join(ph, ", ")), nil
 
 	default:
+		if len(w.values) == 0 {
+			return "", fmt.Errorf("repository: missing value for WHERE %q %s", w.property, w.op)
+		}
 		*args = append(*args, w.values[0])
-		return fmt.Sprintf("%s %s $%d", w.property, w.op, len(*args))
+		return fmt.Sprintf("%s %s $%d", w.property, w.op, len(*args)), nil
 	}
+}
+
+func whereProperties(wheres []WhereClause) []Property {
+	props := make([]Property, len(wheres))
+	for i, w := range wheres {
+		props[i] = w.property
+	}
+	return props
 }

@@ -38,20 +38,20 @@ func (set MigrationSet) Join(arg MigrationSet) MigrationSet {
 }
 
 // Up applies all migrations that have not yet been recorded in the migrations
-// table. The entire batch runs inside a single transaction; any failure causes
-// a rollback and a panic.
+// table. The entire batch runs inside a single transaction.
 func (migrator *Migrator) Up(migrations MigrationSet) error {
 	var err error
 	var bundle pgx.Tx
 
 	bundle, err = migrator.ds.NewTransaction(migrator.ctx)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	err = migrator.createMigrationsTable(bundle)
 	if err != nil {
-		panic(err)
+		_ = bundle.Rollback(migrator.ctx)
+		return err
 	}
 
 	for _, migration := range migrations {
@@ -64,7 +64,7 @@ func (migrator *Migrator) Up(migrations MigrationSet) error {
 
 		if err != nil {
 			_ = bundle.Rollback(migrator.ctx)
-			panic(err)
+			return err
 		}
 
 		if exists {
@@ -74,7 +74,7 @@ func (migrator *Migrator) Up(migrations MigrationSet) error {
 		_, err = bundle.Exec(migrator.ctx, migration.UpQuery)
 		if err != nil {
 			_ = bundle.Rollback(migrator.ctx)
-			panic(fmt.Sprintf("migration: %v failed: %v", migration.Name, err))
+			return fmt.Errorf("migration: %v failed: %w", migration.Name, err)
 		}
 
 		_, err = bundle.Exec(migrator.ctx,
@@ -83,13 +83,13 @@ func (migrator *Migrator) Up(migrations MigrationSet) error {
 		)
 		if err != nil {
 			_ = bundle.Rollback(migrator.ctx)
-			panic(err)
+			return err
 		}
 		fmt.Printf("Migration %v processed\n", migration.Name)
 	}
 
 	if err = bundle.Commit(migrator.ctx); err != nil {
-		panic(err)
+		return err
 	}
 
 	fmt.Printf("All migrations are applied\n")
@@ -104,7 +104,13 @@ func (migrator *Migrator) Down(migrations MigrationSet) error {
 
 	bundle, err = migrator.ds.NewTransaction(migrator.ctx)
 	if err != nil {
-		panic(err)
+		return err
+	}
+
+	err = migrator.createMigrationsTable(bundle)
+	if err != nil {
+		_ = bundle.Rollback(migrator.ctx)
+		return err
 	}
 
 	for index := len(migrations) - 1; index >= 0; index-- {
@@ -118,7 +124,7 @@ func (migrator *Migrator) Down(migrations MigrationSet) error {
 
 		if err != nil {
 			_ = bundle.Rollback(migrator.ctx)
-			panic(err)
+			return err
 		}
 
 		if !exists {
@@ -128,7 +134,7 @@ func (migrator *Migrator) Down(migrations MigrationSet) error {
 		_, err = bundle.Exec(migrator.ctx, migration.DownQuery)
 		if err != nil {
 			_ = bundle.Rollback(migrator.ctx)
-			panic(fmt.Sprintf("migration revert: %v failed: %v", migration.Name, err))
+			return fmt.Errorf("migration revert: %v failed: %w", migration.Name, err)
 		}
 
 		_, err = bundle.Exec(migrator.ctx,
@@ -137,18 +143,26 @@ func (migrator *Migrator) Down(migrations MigrationSet) error {
 		)
 		if err != nil {
 			_ = bundle.Rollback(migrator.ctx)
-			panic(err)
+			return err
 		}
 		fmt.Printf("Migration %v reverted\n", migration.Name)
 	}
 
-	err = migrator.dropMigrationsTable(bundle)
+	empty, err := migrator.migrationsTableEmpty(bundle)
 	if err != nil {
-		panic(err)
+		_ = bundle.Rollback(migrator.ctx)
+		return err
+	}
+	if empty {
+		err = migrator.dropMigrationsTable(bundle)
+		if err != nil {
+			_ = bundle.Rollback(migrator.ctx)
+			return err
+		}
 	}
 
 	if err = bundle.Commit(migrator.ctx); err != nil {
-		panic(err)
+		return err
 	}
 
 	fmt.Printf("All migrations are reverted\n")
@@ -158,10 +172,15 @@ func (migrator *Migrator) Down(migrations MigrationSet) error {
 func (migrator *Migrator) createMigrationsTable(bundle pgx.Tx) (err error) {
 	_, err = bundle.Exec(migrator.ctx, `
         CREATE TABLE IF NOT EXISTS migrations (
-            name TEXT NOT NULL,
+            name TEXT PRIMARY KEY,
             created_at TIMESTAMP DEFAULT NOW()
         )
     `)
+	return
+}
+
+func (migrator *Migrator) migrationsTableEmpty(bundle pgx.Tx) (empty bool, err error) {
+	err = bundle.QueryRow(migrator.ctx, `SELECT NOT EXISTS(SELECT 1 FROM migrations)`).Scan(&empty)
 	return
 }
 

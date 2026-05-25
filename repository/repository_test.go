@@ -83,6 +83,20 @@ func TestNewRepository_PropertiesPopulated(t *testing.T) {
 	}
 }
 
+func TestValidateProperties_QualifiedIdentifierAllowed(t *testing.T) {
+	tbl := NewRepository[simpleStruct](nil, "t")
+	if err := tbl.validateProperties([]Property{"users.name", "public.users.id"}); err != nil {
+		t.Fatalf("validateProperties: %v", err)
+	}
+}
+
+func TestValidateProperties_InvalidQualifiedIdentifierRejected(t *testing.T) {
+	tbl := NewRepository[simpleStruct](nil, "t")
+	if err := tbl.validateProperties([]Property{"users.name;DROP"}); err == nil {
+		t.Fatal("expected error for invalid qualified property, got nil")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // inspectProperties — tag rules
 // ---------------------------------------------------------------------------

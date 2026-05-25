@@ -73,6 +73,9 @@ func (repository *Repository[T]) Delete() *DeleteQuery[T] {
 func (repository *Repository[T]) validateProperties(props []Property) error {
 	for _, p := range props {
 		if strings.Contains(p, ".") {
+			if !isQualifiedProperty(p) {
+				return fmt.Errorf("%s repository: invalid qualified property %q", repository.table, p)
+			}
 			continue
 		}
 		if _, ok := repository.propertySet[p]; !ok {
@@ -80,6 +83,32 @@ func (repository *Repository[T]) validateProperties(props []Property) error {
 		}
 	}
 	return nil
+}
+
+func isQualifiedProperty(p Property) bool {
+	parts := strings.Split(p, ".")
+	for _, part := range parts {
+		if !isIdentifier(part) {
+			return false
+		}
+	}
+	return true
+}
+
+func isIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '_' {
+			continue
+		}
+		if i > 0 && r >= '0' && r <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // ── introspection ─────────────────────────────────────────────────────────────

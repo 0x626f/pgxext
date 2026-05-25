@@ -371,6 +371,29 @@ func TestWithSSLModeVerifyCA_PeerCertificateCallback(t *testing.T) {
 	})
 }
 
+func TestWithSSLMode_ClearsVerifyCACallbackWhenModeChanges(t *testing.T) {
+	cfg := newCfg()
+	cfg.WithSSLMode("verify-ca")
+	if cfg.ConnConfig.TLSConfig.VerifyPeerCertificate == nil {
+		t.Fatal("verify-ca did not install VerifyPeerCertificate")
+	}
+
+	cfg.WithSSLMode("require")
+	if cfg.ConnConfig.TLSConfig.VerifyPeerCertificate != nil {
+		t.Fatal("require should clear VerifyPeerCertificate")
+	}
+
+	cfg.WithSSLMode("verify-ca")
+	if cfg.ConnConfig.TLSConfig.VerifyPeerCertificate == nil {
+		t.Fatal("verify-ca did not reinstall VerifyPeerCertificate")
+	}
+
+	cfg.WithSSLMode("verify-full")
+	if cfg.ConnConfig.TLSConfig.VerifyPeerCertificate != nil {
+		t.Fatal("verify-full should clear VerifyPeerCertificate")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // WithSSLRootCert
 // ---------------------------------------------------------------------------

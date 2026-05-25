@@ -128,6 +128,58 @@ func insertTag(t *testing.T, ds *pgxext.DataSource, label string) int {
 // Select tests
 // ---------------------------------------------------------------------------
 
+func TestBuildWhereSQL_MissingScalarValueReturnsError(t *testing.T) {
+	var args []any
+	_, err := buildWhereSQL([]WhereClause{{property: "name", op: Equals}}, &args)
+	if err == nil {
+		t.Fatal("expected error for missing scalar value, got nil")
+	}
+}
+
+func TestBuildWhereSQL_EmptyInDoesNotAppendArgs(t *testing.T) {
+	var args []any
+	sql, err := buildWhereSQL([]WhereClause{{property: "name", op: In}}, &args)
+	if err != nil {
+		t.Fatalf("buildWhereSQL: %v", err)
+	}
+	if sql != "WHERE FALSE" {
+		t.Fatalf("sql = %q, want %q", sql, "WHERE FALSE")
+	}
+	if len(args) != 0 {
+		t.Fatalf("args = %v, want empty", args)
+	}
+}
+
+func TestBuildWhereSQL_EmptyNotInDoesNotAppendArgs(t *testing.T) {
+	var args []any
+	sql, err := buildWhereSQL([]WhereClause{{property: "name", op: NotIn}}, &args)
+	if err != nil {
+		t.Fatalf("buildWhereSQL: %v", err)
+	}
+	if sql != "WHERE TRUE" {
+		t.Fatalf("sql = %q, want %q", sql, "WHERE TRUE")
+	}
+	if len(args) != 0 {
+		t.Fatalf("args = %v, want empty", args)
+	}
+}
+
+func TestSelect_BuildSelectSQL_ValidatesWhereProperty(t *testing.T) {
+	repo := NewRepository[testItem](nil, "test_repo_items")
+	_, _, err := repo.Select().Where("nonexistent", Equals, "x").buildSelectSQL(0)
+	if err == nil {
+		t.Fatal("expected error for unknown WHERE property, got nil")
+	}
+}
+
+func TestSelect_BuildSelectSQL_ValidatesOrderByProperty(t *testing.T) {
+	repo := NewRepository[testItem](nil, "test_repo_items")
+	_, _, err := repo.Select().OrderBy("nonexistent", ASC).buildSelectSQL(0)
+	if err == nil {
+		t.Fatal("expected error for unknown ORDER BY property, got nil")
+	}
+}
+
 func TestSelect_AllRows(t *testing.T) {
 	ds := integrationDS(t)
 	setupDB(t, ds)
@@ -526,6 +578,17 @@ func TestUpdate_InvalidProperty(t *testing.T) {
 	}
 }
 
+func TestUpdate_InvalidWhereProperty(t *testing.T) {
+	repo := NewRepository[testItem](nil, "test_repo_items")
+	_, err := repo.Update().
+		Set("name", "x").
+		Where("nonexistent", Equals, "y").
+		Execute(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown WHERE property, got nil")
+	}
+}
+
 func TestUpdate_NoWhereUpdatesAll(t *testing.T) {
 	ds := integrationDS(t)
 	setupDB(t, ds)
@@ -628,6 +691,14 @@ func TestDelete_WithWhere(t *testing.T) {
 	rows, _ := repo.Select().Execute(context.Background())
 	if len(rows) != 1 || rows[0].Name != "keep" {
 		t.Fatalf("unexpected rows after delete: %v", rows)
+	}
+}
+
+func TestDelete_InvalidWhereProperty(t *testing.T) {
+	repo := NewRepository[testItem](nil, "test_repo_items")
+	_, err := repo.Delete().Where("nonexistent", Equals, "x").Execute(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown WHERE property, got nil")
 	}
 }
 

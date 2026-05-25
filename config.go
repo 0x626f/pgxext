@@ -208,6 +208,7 @@ func (config *Config) WithSSLMode(mode string) *Config {
 	case "require":
 		config.ensureTLSConfig()
 		config.ConnConfig.TLSConfig.InsecureSkipVerify = true //nolint:gosec // intentional for sslmode=require
+		config.ConnConfig.TLSConfig.VerifyPeerCertificate = nil
 	case "verify-ca":
 		config.ensureTLSConfig()
 		tlsCfg := config.ConnConfig.TLSConfig
@@ -236,6 +237,7 @@ func (config *Config) WithSSLMode(mode string) *Config {
 	default: // "verify-full" and any unrecognised value
 		config.ensureTLSConfig()
 		config.ConnConfig.TLSConfig.InsecureSkipVerify = false
+		config.ConnConfig.TLSConfig.VerifyPeerCertificate = nil
 	}
 	return config
 }

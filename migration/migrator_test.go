@@ -234,7 +234,7 @@ func TestMigrator_Up_Down_Roundtrip(t *testing.T) {
 	}
 }
 
-func TestMigrator_Up_PanicsOnInvalidSQL(t *testing.T) {
+func TestMigrator_Up_ReturnsErrorOnInvalidSQL(t *testing.T) {
 	ds := integrationDS(t)
 	t.Cleanup(func() { cleanDB(t, ds) })
 	cleanDB(t, ds)
@@ -242,12 +242,12 @@ func TestMigrator_Up_PanicsOnInvalidSQL(t *testing.T) {
 	m := NewMigrator(context.Background(), ds)
 	bad := MigrationSet{{Name: "bad_migration", UpQuery: "THIS IS NOT VALID SQL"}}
 
-	if r := catchPanic(func() { m.Up(bad) }); r == nil { //nolint:errcheck
-		t.Error("expected panic for invalid SQL, got none")
+	if err := m.Up(bad); err == nil {
+		t.Error("expected error for invalid SQL, got nil")
 	}
 }
 
-func TestMigrator_Down_PanicsOnInvalidSQL(t *testing.T) {
+func TestMigrator_Down_ReturnsErrorOnInvalidSQL(t *testing.T) {
 	ds := integrationDS(t)
 	t.Cleanup(func() { cleanDB(t, ds) })
 	cleanDB(t, ds)
@@ -261,8 +261,8 @@ func TestMigrator_Down_PanicsOnInvalidSQL(t *testing.T) {
 	}}
 	m.Up(valid) //nolint:errcheck
 
-	if r := catchPanic(func() { m.Down(valid) }); r == nil { //nolint:errcheck
-		t.Error("expected panic for invalid DownQuery SQL, got none")
+	if err := m.Down(valid); err == nil {
+		t.Error("expected error for invalid DownQuery SQL, got nil")
 	}
 	// cleanup residual
 	ds.Exec(context.Background(), "DROP TABLE IF EXISTS down_panic_test") //nolint:errcheck
@@ -281,6 +281,40 @@ func TestMigrator_Down_SkipsNonApplied(t *testing.T) {
 	// Down on the full set: second migration was never applied — must not panic.
 	if r := catchPanic(func() { m.Down(testMigrations) }); r != nil { //nolint:errcheck
 		t.Fatalf("Down panicked on non-applied migration: %v", r)
+	}
+}
+
+func TestMigrator_Down_FreshDatabaseNoOp(t *testing.T) {
+	ds := integrationDS(t)
+	t.Cleanup(func() { cleanDB(t, ds) })
+	cleanDB(t, ds)
+
+	m := NewMigrator(context.Background(), ds)
+	if err := m.Down(testMigrations); err != nil {
+		t.Fatalf("Down on fresh database: %v", err)
+	}
+	if tableExists(t, ds, "migrations") {
+		t.Error("migrations tracking table should be dropped after fresh Down no-op")
+	}
+}
+
+func TestMigrator_Down_SubsetKeepsTrackingTable(t *testing.T) {
+	ds := integrationDS(t)
+	t.Cleanup(func() { cleanDB(t, ds) })
+	cleanDB(t, ds)
+
+	m := NewMigrator(context.Background(), ds)
+	if err := m.Up(testMigrations); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	if err := m.Down(testMigrations[:1]); err != nil {
+		t.Fatalf("Down subset: %v", err)
+	}
+	if !tableExists(t, ds, "migrations") {
+		t.Fatal("migrations tracking table should remain while records exist")
+	}
+	if !migrationRecorded(t, ds, testMigrations[1].Name) {
+		t.Fatalf("remaining migration %q lost from tracking table", testMigrations[1].Name)
 	}
 }
 
