@@ -8,23 +8,21 @@ import (
 	"github.com/0x626f/pgxext"
 )
 
-// Handler processes a received PostgreSQL notification.
+// Handler handles an Event.
 type Handler func(context.Context, Event) error
 
-// Consumer listens for PostgreSQL notifications on one channel.
+// Consumer listens on one PostgreSQL channel.
 type Consumer struct {
 	ds      *pgxext.DataSource
 	channel string
 }
 
-// NewConsumer returns a Consumer that listens on channel using ds.
+// NewConsumer creates a Consumer.
 func NewConsumer(ds *pgxext.DataSource, channel string) *Consumer {
 	return &Consumer{ds: ds, channel: channel}
 }
 
-// Listen blocks until ctx is canceled, the LISTEN connection fails, or handler
-// returns an error. It uses one acquired connection for the duration of the
-// call because PostgreSQL LISTEN state is connection-local.
+// Listen receives events until ctx is canceled or handler returns an error.
 func (c *Consumer) Listen(ctx context.Context, handler Handler) error {
 	return c.listen(ctx, nil, handler)
 }

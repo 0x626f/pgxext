@@ -1,10 +1,9 @@
-// Package notification provides helpers for PostgreSQL LISTEN/NOTIFY
-// consumers and trigger-based notification SQL generation.
+// Package notification provides PostgreSQL LISTEN/NOTIFY helpers.
 package notification
 
 import "encoding/json"
 
-// Operation is a PostgreSQL trigger operation that can emit a notification.
+// Operation is a PostgreSQL row operation.
 type Operation string
 
 const (
@@ -13,8 +12,7 @@ const (
 	Delete Operation = "DELETE"
 )
 
-// PayloadProperty is a top-level JSON payload property emitted by generated
-// notification triggers.
+// PayloadProperty is a JSON payload field.
 type PayloadProperty string
 
 const (
@@ -25,7 +23,7 @@ const (
 	CreatedAt PayloadProperty = "createdAt"
 )
 
-// Payload is the conventional JSON shape produced by Notification.
+// Payload is a decoded notification payload.
 type Payload struct {
 	FromState json.RawMessage `json:"fromState,omitempty"`
 	ToState   json.RawMessage `json:"toState,omitempty"`
@@ -34,8 +32,7 @@ type Payload struct {
 	CreatedAt string          `json:"createdAt,omitempty"`
 }
 
-// Event is a received PostgreSQL notification with an optionally decoded
-// payload.
+// Event is a received PostgreSQL notification.
 type Event struct {
 	PID     uint32
 	Channel string

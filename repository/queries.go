@@ -10,7 +10,7 @@ import (
 
 // ── SelectQuery ───────────────────────────────────────────────────────────────
 
-// SelectQuery builds a SELECT statement for Repository[T].
+// SelectQuery builds SELECT queries.
 type SelectQuery[T any] struct {
 	repo    *Repository[T]
 	ctes    []CTEClause
@@ -21,51 +21,46 @@ type SelectQuery[T any] struct {
 	limit   uint
 }
 
-// With adds a CTE (common table expression). query is the raw SQL for the CTE body.
+// With adds a CTE.
 func (query *SelectQuery[T]) With(name, sql string) *SelectQuery[T] {
 	query.ctes = append(query.ctes, CTEClause{name: name, query: sql})
 	return query
 }
 
-// WithRecursive adds a recursive CTE. The keyword RECURSIVE is emitted once if
-// any CTE in the query is marked recursive.
+// WithRecursive adds a recursive CTE.
 func (query *SelectQuery[T]) WithRecursive(name, sql string) *SelectQuery[T] {
 	query.ctes = append(query.ctes, CTEClause{name: name, query: sql, recursive: true})
 	return query
 }
 
-// Where adds an AND condition. Qualified names (containing ".") bypass property
-// validation so JOIN columns from other tables can be filtered on.
+// Where adds an AND condition.
 func (query *SelectQuery[T]) Where(prop Property, op Operator, values ...any) *SelectQuery[T] {
 	query.wheres = append(query.wheres, WhereClause{property: prop, op: op, values: values})
 	return query
 }
 
-// OrWhere adds an OR condition. Consecutive OrWhere calls (and the preceding
-// Where call) are grouped in parentheses: (a OR b OR c).
+// OrWhere adds an OR condition.
 func (query *SelectQuery[T]) OrWhere(prop Property, op Operator, values ...any) *SelectQuery[T] {
 	query.wheres = append(query.wheres, WhereClause{property: prop, op: op, values: values, or: true})
 	return query
 }
 
-// Join adds an INNER JOIN clause. on and value are column references
-// (e.g. "users.id", "orders.user_id"). An optional alias renders as
-// "table AS alias", which is required when joining the same table more than once.
+// Join adds an INNER JOIN.
 func (query *SelectQuery[T]) Join(table, on string, op Operator, value string, alias ...string) *SelectQuery[T] {
 	return query.appendJoin(Inner, table, on, op, value, alias...)
 }
 
-// LeftJoin adds a LEFT JOIN clause. See Join for alias semantics.
+// LeftJoin adds a LEFT JOIN.
 func (query *SelectQuery[T]) LeftJoin(table, on string, op Operator, value string, alias ...string) *SelectQuery[T] {
 	return query.appendJoin(Left, table, on, op, value, alias...)
 }
 
-// RightJoin adds a RIGHT JOIN clause. See Join for alias semantics.
+// RightJoin adds a RIGHT JOIN.
 func (query *SelectQuery[T]) RightJoin(table, on string, op Operator, value string, alias ...string) *SelectQuery[T] {
 	return query.appendJoin(Right, table, on, op, value, alias...)
 }
 
-// FullJoin adds a FULL JOIN clause. See Join for alias semantics.
+// FullJoin adds a FULL JOIN.
 func (query *SelectQuery[T]) FullJoin(table, on string, op Operator, value string, alias ...string) *SelectQuery[T] {
 	return query.appendJoin(Full, table, on, op, value, alias...)
 }
@@ -79,21 +74,20 @@ func (query *SelectQuery[T]) appendJoin(kind JoinType, table, on string, op Oper
 	return query
 }
 
-// OrderBy sets the ORDER BY clause.
+// OrderBy sets ORDER BY.
 func (query *SelectQuery[T]) OrderBy(prop Property, sort SortOption) *SelectQuery[T] {
 	query.orderBy = prop
 	query.sortOpt = sort
 	return query
 }
 
-// Limit sets the LIMIT clause.
+// Limit sets LIMIT.
 func (query *SelectQuery[T]) Limit(n uint) *SelectQuery[T] {
 	query.limit = n
 	return query
 }
 
-// buildFrom writes "FROM table [JOIN …] [WHERE …]" into sb and appends
-// parameterised WHERE values to args. It is shared by Execute and Count.
+// buildFrom builds FROM, JOIN, and WHERE SQL.
 func (query *SelectQuery[T]) buildFrom(sb *strings.Builder, args *[]any) error {
 	fmt.Fprintf(sb, " FROM %s", query.repo.table)
 
@@ -113,8 +107,7 @@ func (query *SelectQuery[T]) buildFrom(sb *strings.Builder, args *[]any) error {
 	return nil
 }
 
-// buildSelectSQL assembles the SELECT … FROM … [JOIN] [WHERE] [ORDER BY] SQL
-// string and its parameterised arguments. limit=0 means no LIMIT clause.
+// buildSelectSQL builds SELECT SQL.
 func (query *SelectQuery[T]) buildSelectSQL(limit uint) (string, []any, error) {
 	var args []any
 	var sb strings.Builder
@@ -160,8 +153,7 @@ func (query *SelectQuery[T]) validate() error {
 	return query.repo.validateProperties(whereProperties(query.wheres))
 }
 
-// Execute builds and runs the SELECT query, always selecting all mapped columns.
-// Returns all matching rows scanned into []*T via pgx's DataSource-tag mapping.
+// Execute runs the SELECT query.
 func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
 	sql, args, err := query.buildSelectSQL(query.limit)
 	if err != nil {
@@ -174,8 +166,7 @@ func (query *SelectQuery[T]) Execute(ctx context.Context) ([]*T, error) {
 	return pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[T])
 }
 
-// First builds and runs the SELECT query with LIMIT 1 and returns the single
-// matched row, or nil if no rows match. OrderBy is respected when set.
+// First returns the first matching row.
 func (query *SelectQuery[T]) First(ctx context.Context) (*T, error) {
 	sql, args, err := query.buildSelectSQL(1)
 	if err != nil {
@@ -195,8 +186,7 @@ func (query *SelectQuery[T]) First(ctx context.Context) (*T, error) {
 	return results[0], nil
 }
 
-// Exists builds and runs a SELECT EXISTS(...) query with the same joins and
-// WHERE clauses as Execute. ORDER BY and LIMIT are ignored.
+// Exists reports whether any row matches.
 func (query *SelectQuery[T]) Exists(ctx context.Context) (bool, error) {
 	var args []any
 	var sb strings.Builder
@@ -226,8 +216,7 @@ func (query *SelectQuery[T]) Exists(ctx context.Context) (bool, error) {
 	return exists, nil
 }
 
-// Count builds and runs a SELECT COUNT(*) query with the same joins and WHERE
-// clauses as Execute. ORDER BY and LIMIT are ignored.
+// Count returns the number of matching rows.
 func (query *SelectQuery[T]) Count(ctx context.Context) (int64, error) {
 	var args []any
 	var sb strings.Builder
@@ -258,7 +247,7 @@ func (query *SelectQuery[T]) Count(ctx context.Context) (int64, error) {
 
 // ── InsertQuery ───────────────────────────────────────────────────────────────
 
-// InsertQuery builds an INSERT statement for Repository[T].
+// InsertQuery builds INSERT queries.
 type InsertQuery[T any] struct {
 	repo             *Repository[T]
 	sets             []SetClause
@@ -266,24 +255,20 @@ type InsertQuery[T any] struct {
 	updateOnConflict []Property
 }
 
-// Set adds a column value for the INSERT. p must be a mapped property of T.
+// Set adds a column value.
 func (query *InsertQuery[T]) Set(prop Property, value any) *InsertQuery[T] {
 	query.sets = append(query.sets, SetClause{property: prop, value: value})
 	return query
 }
 
-// UpdateOnConflict adds an ON CONFLICT (...) DO UPDATE SET clause.
-// conflictCols identifies the unique constraint columns that trigger the
-// conflict; updateCols lists which columns to overwrite with their EXCLUDED
-// value. All columns must be mapped properties of T.
+// UpdateOnConflict adds an upsert clause.
 func (query *InsertQuery[T]) UpdateOnConflict(conflictCols []Property, updateCols ...Property) *InsertQuery[T] {
 	query.conflictCols = conflictCols
 	query.updateOnConflict = updateCols
 	return query
 }
 
-// Execute validates, builds, and runs the INSERT query.
-// Returns the number of rows affected.
+// Execute runs the INSERT query.
 func (query *InsertQuery[T]) Execute(ctx context.Context) (int64, error) {
 	if len(query.sets) == 0 {
 		return 0, fmt.Errorf("repository: no columns to insert for table %q", query.repo.table)
@@ -339,7 +324,7 @@ func (query *InsertQuery[T]) Execute(ctx context.Context) (int64, error) {
 
 // ── UpdateQuery ───────────────────────────────────────────────────────────────
 
-// UpdateQuery builds an UPDATE statement for Repository[T].
+// UpdateQuery builds UPDATE queries.
 type UpdateQuery[T any] struct {
 	repo   *Repository[T]
 	ctes   []CTEClause
@@ -347,19 +332,19 @@ type UpdateQuery[T any] struct {
 	wheres []WhereClause
 }
 
-// With adds a CTE to the UPDATE statement.
+// With adds a CTE.
 func (query *UpdateQuery[T]) With(name, sql string) *UpdateQuery[T] {
 	query.ctes = append(query.ctes, CTEClause{name: name, query: sql})
 	return query
 }
 
-// WithRecursive adds a recursive CTE to the UPDATE statement.
+// WithRecursive adds a recursive CTE.
 func (query *UpdateQuery[T]) WithRecursive(name, sql string) *UpdateQuery[T] {
 	query.ctes = append(query.ctes, CTEClause{name: name, query: sql, recursive: true})
 	return query
 }
 
-// Set adds a SET p = v assignment. p must be a mapped property of T.
+// Set adds an assignment.
 func (query *UpdateQuery[T]) Set(prop Property, value any) *UpdateQuery[T] {
 	query.sets = append(query.sets, SetClause{property: prop, value: value})
 	return query
@@ -371,14 +356,13 @@ func (query *UpdateQuery[T]) Where(prop Property, op Operator, values ...any) *U
 	return query
 }
 
-// OrWhere adds an OR condition. See SelectQuery.OrWhere for grouping semantics.
+// OrWhere adds an OR condition.
 func (query *UpdateQuery[T]) OrWhere(prop Property, op Operator, values ...any) *UpdateQuery[T] {
 	query.wheres = append(query.wheres, WhereClause{property: prop, op: op, values: values, or: true})
 	return query
 }
 
-// Execute validates, builds, and runs the UPDATE query.
-// Returns the number of rows affected.
+// Execute runs the UPDATE query.
 func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
 	if len(query.sets) == 0 {
 		return 0, fmt.Errorf("repository: no SET clauses for UPDATE on table %q", query.repo.table)
@@ -424,20 +408,20 @@ func (query *UpdateQuery[T]) Execute(ctx context.Context) (int64, error) {
 
 // ── DeleteQuery ───────────────────────────────────────────────────────────────
 
-// DeleteQuery builds a DELETE statement for Repository[T].
+// DeleteQuery builds DELETE queries.
 type DeleteQuery[T any] struct {
 	repo   *Repository[T]
 	ctes   []CTEClause
 	wheres []WhereClause
 }
 
-// With adds a CTE to the DELETE statement.
+// With adds a CTE.
 func (q *DeleteQuery[T]) With(name, sql string) *DeleteQuery[T] {
 	q.ctes = append(q.ctes, CTEClause{name: name, query: sql})
 	return q
 }
 
-// WithRecursive adds a recursive CTE to the DELETE statement.
+// WithRecursive adds a recursive CTE.
 func (q *DeleteQuery[T]) WithRecursive(name, sql string) *DeleteQuery[T] {
 	q.ctes = append(q.ctes, CTEClause{name: name, query: sql, recursive: true})
 	return q
@@ -449,14 +433,13 @@ func (q *DeleteQuery[T]) Where(prop Property, op Operator, values ...any) *Delet
 	return q
 }
 
-// OrWhere adds an OR condition. See SelectQuery.OrWhere for grouping semantics.
+// OrWhere adds an OR condition.
 func (q *DeleteQuery[T]) OrWhere(prop Property, op Operator, values ...any) *DeleteQuery[T] {
 	q.wheres = append(q.wheres, WhereClause{property: prop, op: op, values: values, or: true})
 	return q
 }
 
-// Execute validates, builds, and runs the DELETE query.
-// Returns the number of rows affected.
+// Execute runs the DELETE query.
 func (q *DeleteQuery[T]) Execute(ctx context.Context) (int64, error) {
 	var args []any
 	var sb strings.Builder
@@ -484,8 +467,7 @@ func (q *DeleteQuery[T]) Execute(ctx context.Context) (int64, error) {
 
 // ── SQL helpers ───────────────────────────────────────────────────────────────
 
-// buildCTESQL renders "WITH [RECURSIVE] name AS (query), …" or empty string.
-// RECURSIVE is emitted once if any CTE in the list is marked recursive.
+// buildCTESQL builds WITH SQL.
 func buildCTESQL(ctes []CTEClause) string {
 	if len(ctes) == 0 {
 		return ""
@@ -508,13 +490,7 @@ func buildCTESQL(ctes []CTEClause) string {
 	return keyword + strings.Join(parts, ", ")
 }
 
-// buildWhereSQL renders all clauses and returns the full "WHERE ..." string
-// (empty string if no clauses). Consecutive OR-flagged clauses are grouped in
-// parentheses and joined with OR; groups are then joined with AND.
-//
-// Example: Where(a).OrWhere(b).OrWhere(c).Where(d) →
-//
-//	WHERE (a OR b OR c) AND d
+// buildWhereSQL builds WHERE SQL.
 func buildWhereSQL(wheres []WhereClause, args *[]any) (string, error) {
 	if len(wheres) == 0 {
 		return "", nil
@@ -555,8 +531,7 @@ func buildWhereSQL(wheres []WhereClause, args *[]any) (string, error) {
 	return "WHERE " + strings.Join(andParts, " AND "), nil
 }
 
-// whereClauseSQL renders a single WhereClause, appending parameterised values
-// to args and using $n placeholders.
+// whereClauseSQL builds one WHERE clause.
 func whereClauseSQL(w WhereClause, args *[]any) (string, error) {
 	switch w.op {
 	case IsNull, IsNotNull:

@@ -12,7 +12,6 @@
 </div>
 
 <div align="center">
-    <h6>Currently under active development — breaking changes are possible</h6>
     <h3>A thin pgx/v5 connection-pool wrapper with migrations and a generic query builder.</h3>
 </div>
 
@@ -27,6 +26,7 @@
 - **Migration** — transactional SQL migration runner backed by a `migrations` table.
 - **Repository** — generic, type-safe query builder (SELECT / INSERT / UPDATE / DELETE) with JOIN and COUNT support.
 - **Notification** — trigger builder and LISTEN consumer for JSON PostgreSQL notifications.
+- **Database** — builders for PostgreSQL views, materialized views, and functions.
 
 ---
 
@@ -187,6 +187,41 @@ err := consumer.Listen(ctx, func(ctx context.Context, event notification.Event) 
     fmt.Println(event.Payload.TableName, event.Payload.RowID)
     return nil
 })
+```
+
+### Database objects
+
+Build and apply database-level objects directly or embed the generated SQL in migrations:
+
+```go
+view := database.NewView("public.active_users").
+    OrReplace().
+    As(`SELECT id, email FROM users WHERE active`)
+
+err := view.Apply(ctx, ds)
+```
+
+```go
+matView := database.NewMaterializedView("public.user_totals").
+    IfNotExists().
+    As(`SELECT user_id, count(*) AS total FROM orders GROUP BY user_id`).
+    WithNoData()
+
+err := matView.Apply(ctx, ds)
+err = matView.Refresh(ctx, ds, true, true)
+```
+
+```go
+fn := database.NewFunction("public.normalize_email").
+    OrReplace().
+    WithArguments("value text").
+    Returns("text").
+    Language("sql").
+    WithVolatility(database.Immutable).
+    Strict().
+    Body(`SELECT lower(trim(value))`)
+
+err := fn.Apply(ctx, ds)
 ```
 
 ### Utilities

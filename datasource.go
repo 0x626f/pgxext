@@ -8,13 +8,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// DataSource wraps a pgxpool.Pool and exposes the query surface used by the
-// rest of the library. A nil context is treated as context.Background().
+// DataSource wraps a pgxpool.Pool.
 type DataSource struct {
 	*pgxpool.Pool
 }
 
-// NewDataSource opens a connection pool using the provided Config.
+// NewDataSource opens a connection pool.
 func NewDataSource(ctx context.Context, config *Config) (ds *DataSource, err error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -29,7 +28,7 @@ func NewDataSource(ctx context.Context, config *Config) (ds *DataSource, err err
 	return
 }
 
-// Exec runs a SQL statement that does not return rows.
+// Exec runs a SQL statement.
 func (ds *DataSource) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -38,7 +37,7 @@ func (ds *DataSource) Exec(ctx context.Context, sql string, args ...interface{})
 	return ds.Pool.Exec(ctx, sql, args...)
 }
 
-// Query executes a SQL query and returns the resulting rows.
+// Query runs a SQL query.
 func (ds *DataSource) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -47,7 +46,7 @@ func (ds *DataSource) Query(ctx context.Context, sql string, args ...any) (pgx.R
 	return ds.Pool.Query(ctx, sql, args...)
 }
 
-// QueryRow executes a SQL query expected to return at most one row.
+// QueryRow runs a SQL query and returns one row.
 func (ds *DataSource) QueryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -56,7 +55,7 @@ func (ds *DataSource) QueryRow(ctx context.Context, sql string, args ...any) (pg
 	return ds.Pool.QueryRow(ctx, sql, args...), nil
 }
 
-// NewTransaction begins a new database transaction with default options.
+// NewTransaction starts a transaction.
 func (ds *DataSource) NewTransaction(ctx context.Context) (pgx.Tx, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -65,7 +64,7 @@ func (ds *DataSource) NewTransaction(ctx context.Context) (pgx.Tx, error) {
 	return ds.Pool.Begin(ctx)
 }
 
-// NewCustomTransaction begins a transaction with the specified isolation level and access mode.
+// NewCustomTransaction starts a transaction with options.
 func (ds *DataSource) NewCustomTransaction(ctx context.Context, options pgx.TxOptions) (pgx.Tx, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -74,12 +73,12 @@ func (ds *DataSource) NewCustomTransaction(ctx context.Context, options pgx.TxOp
 	return ds.Pool.BeginTx(ctx, options)
 }
 
-// NewBatch returns an empty pgx.Batch ready to queue statements.
+// NewBatch returns an empty batch.
 func (ds *DataSource) NewBatch() *pgx.Batch {
 	return &pgx.Batch{}
 }
 
-// SendBatch dispatches all queued statements in batch as a single round-trip.
+// SendBatch sends a batch.
 func (ds *DataSource) SendBatch(ctx context.Context, batch *pgx.Batch) (pgx.BatchResults, error) {
 	if ctx == nil {
 		ctx = context.Background()

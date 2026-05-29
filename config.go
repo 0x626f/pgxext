@@ -14,13 +14,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Config extends pgxpool.Config with session parameters not directly
-// representable as fields in the underlying pgxpool/pgconn structs.
+// Config wraps pgxpool.Config.
 type Config struct {
 	*pgxpool.Config
 }
 
-// NewConfig returns a Config initialised from an empty DSN via pgxpool.ParseConfig.
+// NewConfig creates a default Config.
 func NewConfig() *Config {
 	cfg, err := pgxpool.ParseConfig("")
 	if err != nil {
@@ -53,42 +52,42 @@ func (config *Config) ensureTLSConfig() {
 	}
 }
 
-// WithHost sets the database server host.
+// WithHost sets the host.
 func (config *Config) WithHost(host string) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Host = host
 	return config
 }
 
-// WithPort sets the database server port.
+// WithPort sets the port.
 func (config *Config) WithPort(port uint16) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Port = port
 	return config
 }
 
-// WithDatabase sets the database name.
+// WithDatabase sets the database.
 func (config *Config) WithDatabase(database string) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Database = database
 	return config
 }
 
-// WithUser sets the database user.
+// WithUser sets the user.
 func (config *Config) WithUser(user string) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.User = user
 	return config
 }
 
-// WithPassword sets the database password.
+// WithPassword sets the password.
 func (config *Config) WithPassword(password string) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Password = password
 	return config
 }
 
-// WithConnectTimeout sets the maximum wait for a connection to be established.
+// WithConnectTimeout sets the connect timeout.
 func (config *Config) WithConnectTimeout(timeout time.Duration) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.ConnectTimeout = timeout
@@ -97,51 +96,45 @@ func (config *Config) WithConnectTimeout(timeout time.Duration) *Config {
 
 // -- pgxpool lifecycle hooks --------------------------------------------------
 
-// WithBeforeConnect sets a hook called before each new connection is dialed.
-// The pgx.ConnConfig copy passed to fn is not shared with any open connection.
+// WithBeforeConnect sets BeforeConnect.
 func (config *Config) WithBeforeConnect(fn func(context.Context, *pgx.ConnConfig) error) *Config {
 	config.BeforeConnect = fn
 	return config
 }
 
-// WithAfterConnect sets a hook called after a connection is established,
-// before it is added to the pool.
+// WithAfterConnect sets AfterConnect.
 func (config *Config) WithAfterConnect(fn func(context.Context, *pgx.Conn) error) *Config {
 	config.AfterConnect = fn
 	return config
 }
 
-// WithPrepareConn sets a hook called before a connection is acquired from the
-// pool. Return (true, nil) to allow, (false, nil) to destroy and retry on a
-// new connection, or (_, err) to surface an error to the caller.
+// WithPrepareConn sets PrepareConn.
 func (config *Config) WithPrepareConn(fn func(context.Context, *pgx.Conn) (bool, error)) *Config {
 	config.PrepareConn = fn
 	return config
 }
 
-// WithBeforeAcquire sets a hook called before a connection is acquired from
-// the pool. Deprecated: prefer WithPrepareConn.
+// WithBeforeAcquire sets BeforeAcquire.
+//
+// Deprecated: prefer WithPrepareConn.
 func (config *Config) WithBeforeAcquire(fn func(context.Context, *pgx.Conn) bool) *Config {
 	config.BeforeAcquire = fn //nolint:staticcheck
 	return config
 }
 
-// WithAfterRelease sets a hook called after a connection is released but
-// before it is returned to the pool. Return false to destroy the connection.
+// WithAfterRelease sets AfterRelease.
 func (config *Config) WithAfterRelease(fn func(*pgx.Conn) bool) *Config {
 	config.AfterRelease = fn
 	return config
 }
 
-// WithBeforeClose sets a hook called just before a connection is closed and
-// removed from the pool.
+// WithBeforeClose sets BeforeClose.
 func (config *Config) WithBeforeClose(fn func(*pgx.Conn)) *Config {
 	config.BeforeClose = fn
 	return config
 }
 
-// WithShouldPing sets a hook that decides whether an acquired connection
-// should be pinged to check liveness before use.
+// WithShouldPing sets ShouldPing.
 func (config *Config) WithShouldPing(fn func(context.Context, pgxpool.ShouldPingParams) bool) *Config {
 	config.ShouldPing = fn
 	return config
@@ -149,57 +142,49 @@ func (config *Config) WithShouldPing(fn func(context.Context, pgxpool.ShouldPing
 
 // -- pgconn lifecycle hooks --------------------------------------------------
 
-// WithDialFunc overrides the function used to establish the underlying network
-// connection (e.g. to use a custom dialer or proxy).
+// WithDialFunc sets DialFunc.
 func (config *Config) WithDialFunc(fn pgconn.DialFunc) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Config.DialFunc = fn
 	return config
 }
 
-// WithLookupFunc overrides the DNS resolver used during connection.
+// WithLookupFunc sets LookupFunc.
 func (config *Config) WithLookupFunc(fn pgconn.LookupFunc) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Config.LookupFunc = fn
 	return config
 }
 
-// WithValidateConnect sets a hook called after authentication succeeds.
-// Return an error to reject the connection and try the next fallback.
+// WithValidateConnect sets ValidateConnect.
 func (config *Config) WithValidateConnect(fn pgconn.ValidateConnectFunc) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Config.ValidateConnect = fn
 	return config
 }
 
-// WithOnNotice sets a callback invoked whenever the server sends a notice.
+// WithOnNotice sets OnNotice.
 func (config *Config) WithOnNotice(fn pgconn.NoticeHandler) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Config.OnNotice = fn
 	return config
 }
 
-// WithOnNotification sets a callback invoked on LISTEN/NOTIFY notifications.
+// WithOnNotification sets OnNotification.
 func (config *Config) WithOnNotification(fn pgconn.NotificationHandler) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Config.OnNotification = fn
 	return config
 }
 
-// WithOnPgError sets a callback invoked when the server returns a Postgres error.
-// Return false to close the connection; return true to keep it open.
+// WithOnPgError sets OnPgError.
 func (config *Config) WithOnPgError(fn pgconn.PgErrorHandler) *Config {
 	config.ensureConnConfig()
 	config.ConnConfig.Config.OnPgError = fn
 	return config
 }
 
-// WithSSLMode configures ConnConfig.TLSConfig according to the PostgreSQL sslmode:
-//   - "disable"     — TLS is disabled entirely.
-//   - "require"     — TLS is required; server certificate is not verified.
-//   - "verify-ca"   — TLS is required; certificate chain is verified against RootCAs
-//     but the server hostname is not checked.
-//   - "verify-full" — TLS is required; both certificate chain and hostname are verified.
+// WithSSLMode sets the PostgreSQL sslmode.
 func (config *Config) WithSSLMode(mode string) *Config {
 	config.ensureConnConfig()
 	switch mode {
@@ -242,8 +227,7 @@ func (config *Config) WithSSLMode(mode string) *Config {
 	return config
 }
 
-// WithSSLRootCert loads the PEM-encoded CA certificate from rootCertFile and
-// registers it as the trusted root for TLS verification.
+// WithSSLRootCert loads a root certificate.
 func (config *Config) WithSSLRootCert(rootCertFile string) (*Config, error) {
 	data, err := os.ReadFile(rootCertFile)
 	if err != nil {
@@ -258,9 +242,7 @@ func (config *Config) WithSSLRootCert(rootCertFile string) (*Config, error) {
 	return config, nil
 }
 
-// WithSSLClientCert loads the client certificate and private key from certFile
-// and keyFile, building a ready-to-use tls.Certificate inside ConnConfig.TLSConfig.
-// Pass a non-empty password if the private key is PEM-encrypted; otherwise pass "".
+// WithSSLClientCert loads a client certificate.
 func (config *Config) WithSSLClientCert(certFile, keyFile, password string) (*Config, error) {
 	certPEM, err := os.ReadFile(certFile)
 	if err != nil {
@@ -284,7 +266,7 @@ func (config *Config) WithSSLClientCert(certFile, keyFile, password string) (*Co
 	return config, nil
 }
 
-// decryptPEMKey decrypts a traditionally PEM-encrypted private key block.
+// decryptPEMKey decrypts a PEM key.
 func decryptPEMKey(keyPEM []byte, password string) ([]byte, error) {
 	block, _ := pem.Decode(keyPEM)
 	if block == nil {
@@ -299,69 +281,58 @@ func decryptPEMKey(keyPEM []byte, password string) ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: block.Type, Bytes: decrypted}), nil
 }
 
-// WithApplicationName sets the application_name runtime parameter.
+// WithApplicationName sets application_name.
 func (config *Config) WithApplicationName(name string) *Config {
 	config.ensureRuntimeParams()
 	config.ConnConfig.RuntimeParams["application_name"] = name
 	return config
 }
 
-// WithSearchPath sets the search_path runtime parameter.
+// WithSearchPath sets search_path.
 func (config *Config) WithSearchPath(path string) *Config {
 	config.ensureRuntimeParams()
 	config.ConnConfig.RuntimeParams["search_path"] = path
 	return config
 }
 
-// WithTimezone sets the TimeZone runtime parameter.
+// WithTimezone sets TimeZone.
 func (config *Config) WithTimezone(tz string) *Config {
 	config.ensureRuntimeParams()
 	config.ConnConfig.RuntimeParams["TimeZone"] = tz
 	return config
 }
 
-// WithMaxConns sets the maximum number of connections in the pool.
-// Maps to pgxpool.Config.MaxConns.
+// WithMaxConns sets MaxConns.
 func (config *Config) WithMaxConns(n int32) *Config {
 	config.MaxConns = n
 	return config
 }
 
-// WithMinConns sets the minimum number of connections in the pool.
-// Maps to pgxpool.Config.MinConns.
+// WithMinConns sets MinConns.
 func (config *Config) WithMinConns(n int32) *Config {
 	config.MinConns = n
 	return config
 }
 
-// WithMaxConnLifetime sets the maximum lifetime of a pooled connection.
-// Maps to pgxpool.Config.MaxConnLifetime.
+// WithMaxConnLifetime sets MaxConnLifetime.
 func (config *Config) WithMaxConnLifetime(d time.Duration) *Config {
 	config.MaxConnLifetime = d
 	return config
 }
 
-// WithMaxConnIdleTime sets the maximum idle time before a connection is closed.
-// Maps to pgxpool.Config.MaxConnIdleTime.
+// WithMaxConnIdleTime sets MaxConnIdleTime.
 func (config *Config) WithMaxConnIdleTime(d time.Duration) *Config {
 	config.MaxConnIdleTime = d
 	return config
 }
 
-// WithHealthCheckPeriod sets the interval between health checks on idle connections.
-// Maps to pgxpool.Config.HealthCheckPeriod.
+// WithHealthCheckPeriod sets HealthCheckPeriod.
 func (config *Config) WithHealthCheckPeriod(d time.Duration) *Config {
 	config.HealthCheckPeriod = d
 	return config
 }
 
-// WithURL parses a PostgreSQL connection URL and fills all Config fields.
-// Delegates entirely to pgxpool.ParseConfig, which handles all standard params,
-// SSL (builds ConnConfig.TLSConfig directly), pool_* params, and runtime params.
-//
-// Example:
-//
-//	postgres://alice:secret@localhost:5432/mydb?sslmode=verify-full&pool_max_conns=10
+// WithURL parses a PostgreSQL URL.
 func (config *Config) WithURL(rawURL string) (*Config, error) {
 	poolCfg, err := pgxpool.ParseConfig(rawURL)
 	if err != nil {

@@ -1,6 +1,4 @@
-// Package pgxext provides a thin PostgreSQL connection-pool wrapper built on
-// pgx/v5, with helpers for configuration, migrations, and a generic repository
-// query builder.
+// Package pgxext provides pgx/v5 helpers.
 package pgxext
 
 import (
@@ -10,8 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// CollectOneRow scans the first row of rows into *T using db-tag field mapping.
-// Returns nil without an error if no rows are found.
+// CollectOneRow scans one row into *T.
 func CollectOneRow[T any](rows pgx.Rows) (*T, error) {
 	result, err := pgx.CollectOneRow(rows, pgx.RowToAddrOfStructByName[T])
 
@@ -24,8 +21,7 @@ func CollectOneRow[T any](rows pgx.Rows) (*T, error) {
 	return result, nil
 }
 
-// CollectRows scans all rows into []*T using db-tag field mapping.
-// Returns nil without an error if no rows are found.
+// CollectRows scans rows into []*T.
 func CollectRows[T any](rows pgx.Rows) ([]*T, error) {
 	result, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[T])
 
@@ -38,8 +34,7 @@ func CollectRows[T any](rows pgx.Rows) ([]*T, error) {
 	return result, nil
 }
 
-// IsPostgresError reports whether err is a PostgreSQL server error and returns
-// the underlying *pgconn.PgError for inspection (e.g. Code, Constraint).
+// IsPostgresError unwraps a PostgreSQL server error.
 func IsPostgresError(err error) (*pgconn.PgError, bool) {
 	var dbError *pgconn.PgError
 	if errors.As(err, &dbError) {

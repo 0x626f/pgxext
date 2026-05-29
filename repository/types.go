@@ -1,13 +1,9 @@
-// Package repository provides a generic, type-safe query builder for
-// PostgreSQL backed by pgxext.DataSource. Struct fields are mapped to
-// columns once at repository creation time via reflection on the "DataSource"
-// struct tag; all subsequent query building is reflection-free.
+// Package repository provides a generic PostgreSQL query builder.
 package repository
 
 // ── Operator ─────────────────────────────────────────────────────────────────
 
-// Operator represents a SQL comparison operator.
-// Its integer value is the index into operatorStrings.
+// Operator is a SQL comparison operator.
 type Operator uint8
 
 const (
@@ -31,7 +27,7 @@ const (
 	NotSimilarTo                   // NOT SIMILAR TO
 )
 
-// operatorStrings maps each Operator constant to its SQL representation.
+// operatorStrings maps operators to SQL.
 var operatorStrings = [...]string{
 	Equals:         "=",
 	NotEquals:      "!=",
@@ -62,7 +58,7 @@ func (op Operator) String() string {
 
 // ── JoinType ──────────────────────────────────────────────────────────────────
 
-// JoinType represents a SQL JOIN variant.
+// JoinType is a SQL JOIN type.
 type JoinType uint8
 
 const (
@@ -72,7 +68,7 @@ const (
 	Full
 )
 
-// joinTypeStrings maps each JoinType constant to its SQL keyword.
+// joinTypeStrings maps joins to SQL.
 var joinTypeStrings = [...]string{
 	Inner: "INNER",
 	Left:  "LEFT",
@@ -89,7 +85,7 @@ func (jt JoinType) String() string {
 
 // ── SortOption ────────────────────────────────────────────────────────────────
 
-// SortOption represents ASC or DESC sort order.
+// SortOption is ASC or DESC.
 type SortOption uint8
 
 const (
@@ -97,7 +93,7 @@ const (
 	ASC
 )
 
-// sortOptionStrings maps each SortOption constant to its SQL keyword.
+// sortOptionStrings maps sort options to SQL.
 var sortOptionStrings = [...]string{
 	DESC: "DESC",
 	ASC:  "ASC",
@@ -112,9 +108,7 @@ func (s SortOption) String() string {
 
 // ── Clause types ──────────────────────────────────────────────────────────────
 
-// WhereClause holds a single WHERE condition used in query builders.
-// values holds one element for scalar operators and multiple for In/NotIn.
-// or indicates this clause is OR-connected to the previous one (AND otherwise).
+// WhereClause is a WHERE condition.
 type WhereClause struct {
 	property Property
 	op       Operator
@@ -122,9 +116,7 @@ type WhereClause struct {
 	or       bool
 }
 
-// JoinClause describes a JOIN to another table.
-// on and value are column references (e.g. "users.id", "orders.user_id").
-// alias is optional; when set the table is rendered as "table AS alias".
+// JoinClause is a JOIN clause.
 type JoinClause struct {
 	kind  JoinType
 	table string
@@ -134,14 +126,13 @@ type JoinClause struct {
 	value string
 }
 
-// SetClause is a single SET assignment in an UPDATE statement.
+// SetClause is a SET assignment.
 type SetClause struct {
 	property Property
 	value    any
 }
 
-// CTEClause describes a single Common Table Expression (CTE).
-// recursive marks it for WITH RECURSIVE rendering.
+// CTEClause is a common table expression.
 type CTEClause struct {
 	name      string
 	query     string

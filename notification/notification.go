@@ -8,7 +8,7 @@ import (
 	"github.com/0x626f/pgxext"
 )
 
-// Notification creates PostgreSQL trigger SQL that emits JSON NOTIFY payloads.
+// Notification builds trigger-based PostgreSQL notifications.
 type Notification struct {
 	table      string
 	eventName  string
@@ -17,8 +17,7 @@ type Notification struct {
 	props      []PayloadProperty
 }
 
-// NewNotification returns a trigger notification builder for table and eventName.
-// eventName is used as the PostgreSQL NOTIFY channel.
+// NewNotification creates a notification for table and channel.
 func NewNotification(table, eventName string) *Notification {
 	return &Notification{
 		table:      table,
@@ -28,34 +27,31 @@ func NewNotification(table, eventName string) *Notification {
 	}
 }
 
-// On restricts the trigger to the listed operations. If omitted, all supported
-// row operations are used.
+// On sets the operations that emit notifications.
 func (b *Notification) On(operations ...Operation) *Notification {
 	b.operations = append([]Operation(nil), operations...)
 	return b
 }
 
-// WithRowIDColumn sets the column used for the rowId payload property.
+// WithRowIDColumn sets the rowId source column.
 func (b *Notification) WithRowIDColumn(column string) *Notification {
 	b.rowID = column
 	return b
 }
 
-// WithPayloadProperties sets the exact top-level JSON properties to emit.
-// Passing no properties intentionally creates an empty JSON object payload.
+// WithPayloadProperties sets the emitted JSON fields.
 func (b *Notification) WithPayloadProperties(props ...PayloadProperty) *Notification {
 	b.props = append([]PayloadProperty(nil), props...)
 	return b
 }
 
-// EmptyPayload configures the trigger to emit "{}".
+// EmptyPayload emits "{}".
 func (b *Notification) EmptyPayload() *Notification {
 	b.props = nil
 	return b
 }
 
-// BuildSQL returns SQL that creates or replaces the notification trigger
-// function and trigger.
+// BuildSQL builds trigger installation SQL.
 func (b *Notification) BuildSQL() (string, error) {
 	qualifiedTable, err := quoteQualifiedIdentifier(b.table)
 	if err != nil {
@@ -117,7 +113,7 @@ FOR EACH ROW EXECUTE FUNCTION %s();`,
 	), nil
 }
 
-// DropSQL returns SQL that drops the trigger and function created by BuildSQL.
+// DropSQL builds trigger removal SQL.
 func (b *Notification) DropSQL() (string, error) {
 	qualifiedTable, err := quoteQualifiedIdentifier(b.table)
 	if err != nil {
@@ -136,7 +132,7 @@ func (b *Notification) DropSQL() (string, error) {
 	return fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s;\nDROP FUNCTION IF EXISTS %s();", quotedTrigger, qualifiedTable, quotedFn), nil
 }
 
-// Apply executes BuildSQL against ds.
+// Apply installs the notification trigger.
 func (b *Notification) Apply(ctx context.Context, ds *pgxext.DataSource) error {
 	sql, err := b.BuildSQL()
 	if err != nil {
