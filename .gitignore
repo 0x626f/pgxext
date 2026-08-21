@@ -1,32 +1,64 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Hidden directories at any depth (dotfiles remain covered separately).
+**/.*/
+!/.codex/
+!/.codex/skills/
+!/.codex/skills/design-backend-module/
+!/.codex/skills/design-backend-module/**
+
+# Environment files
+.env
+.env.*
+!.env.example
+!*.env.example
+*.env
+!/backend/infra.example.env
+
+# Application-local structured configuration (tracked examples live in docs/)
+/backend/cmd/**/*.toml
+/backend/cmd/**/*.yaml
+/backend/cmd/**/*.yml
+!/backend/cmd/**/docs/*.toml
+!/backend/cmd/**/docs/*.yaml
+!/backend/cmd/**/docs/*.yml
+!/backend/cmd/**/docs/**/*.toml
+!/backend/cmd/**/docs/**/*.yaml
+!/backend/cmd/**/docs/**/*.yml
+
+# Solerk application-local environment configuration
+/backend/cmd/solerk/.env*
+/backend/cmd/solerk/*.env
+!/backend/cmd/solerk/docs/.env*
+!/backend/cmd/solerk/docs/*.env
+
+# Go build artifacts
+/.build/
+/evm
+**/bin/
+**/dist/
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Code coverage profiles and other test artifacts
 *.out
-coverage.*
-*.coverprofile
-profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
+# Go workspace files
 go.work
 go.work.sum
 
-# env file
-.env
+# Coverage and profiling
+coverage.out
+*.coverprofile
+*.prof
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# Dependency/vendor caches
+**/vendor/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
