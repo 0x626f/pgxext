@@ -26,7 +26,8 @@
 - **Migration** — transactional SQL migration runner backed by a `migrations` table.
 - **Repository** — generic, type-safe query builder (SELECT / INSERT / UPDATE / DELETE) with JOIN and COUNT support.
 - **Notification** — trigger builder and LISTEN consumer for JSON PostgreSQL notifications.
-- **Database** — builders for PostgreSQL views, materialized views, and functions.
+- **Functional** — builders for PostgreSQL views, materialized views, and functions.
+- **TimescaleDB** — safe hypertable, frame/gapfill, continuous-aggregate, policy, and metadata primitives.
 
 ---
 
@@ -194,7 +195,7 @@ err := consumer.Listen(ctx, func(ctx context.Context, event notification.Event) 
 Build and apply database-level objects directly or embed the generated SQL in migrations:
 
 ```go
-view := database.NewView("public.active_users").
+view := functional.NewView("public.active_users").
     OrReplace().
     As(`SELECT id, email FROM users WHERE active`)
 
@@ -202,7 +203,7 @@ err := view.Apply(ctx, ds)
 ```
 
 ```go
-matView := database.NewMaterializedView("public.user_totals").
+matView := functional.NewMaterializedView("public.user_totals").
     IfNotExists().
     As(`SELECT user_id, count(*) AS total FROM orders GROUP BY user_id`).
     WithNoData()
@@ -212,17 +213,58 @@ err = matView.Refresh(ctx, ds, true, true)
 ```
 
 ```go
-fn := database.NewFunction("public.normalize_email").
+fn := functional.NewFunction("public.normalize_email").
     OrReplace().
     WithArguments("value text").
     Returns("text").
     Language("sql").
-    WithVolatility(database.Immutable).
+    WithVolatility(functional.Immutable).
     Strict().
     Body(`SELECT lower(trim(value))`)
 
 err := fn.Apply(ctx, ds)
 ```
+
+### TimescaleDB
+
+The additive `timescaledb` package targets TimescaleDB 2.20+ on PostgreSQL
+15–17, and TimescaleDB 2.23+ on PostgreSQL 18. It uses pgx/v5, supports
+`TIMESTAMPTZ` time dimensions, and takes `*pgxext.DataSource` directly for
+runtime operations. Run every package against the PostgreSQL 16/17/18 and
+compatible TimescaleDB matrix with `just test-integration` (or the shorter
+`just test` alias). Each matrix row writes a package coverage profile under
+`.coverage/`.
+
+```go
+source := timescaledb.Relation{Schema: "metrics", Name: "observations"}
+
+hypertable := timescaledb.NewHypertable(source, "observed_at").
+    ChunkInterval(timescaledb.FixedInterval(24 * time.Hour)).
+    IfNotExists()
+
+if err := hypertable.Apply(ctx, ds); err != nil {
+    return err
+}
+
+frames, err := timescaledb.NewFrameQuery[Frame](source, "observed_at").
+    Bucket(timescaledb.FixedInterval(15 * time.Second)).
+    Dimension("series_id").
+    Measure(timescaledb.Avg("value").As("average")).
+    Between(from, to).
+    Where(timescaledb.Equal("series_id", seriesID)).
+    Execute(ctx, ds)
+```
+
+Extension installation is explicit: use `timescaledb.CreateExtensionSQL()` in
+an application migration or call `timescaledb.CreateExtension` from an
+authorized bootstrap. The package never installs or drops the extension during
+initialization.
+
+Continuous aggregates, real-time aggregation, gapfill, retention, and
+columnstore depend on the installed Timescale edition and version. See the
+[complete package guide](timescaledb/README.md) for compatibility, safe DDL,
+gapfill modes, policy planning, manual refresh, lifecycle warnings,
+transactions, metadata, integration tests, and non-goals.
 
 ### Utilities
 

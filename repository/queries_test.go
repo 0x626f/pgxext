@@ -44,12 +44,15 @@ CREATE TABLE IF NOT EXISTS test_repo_tags (
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-// integrationDS returns a connected *pgxext.DataSource or skips the test if
-// TEST_DATABASE_URL is not set.
+// integrationDS returns a connected DataSource. Missing configuration skips a
+// developer test run, but is a failure in the required integration matrix.
 func integrationDS(t *testing.T) *pgxext.DataSource {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
+		if os.Getenv("PGXEXT_REQUIRE_INTEGRATION") == "1" {
+			t.Fatal("TEST_DATABASE_URL not set while integration tests are required")
+		}
 		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
 	}
 	cfg := pgxext.NewConfig()

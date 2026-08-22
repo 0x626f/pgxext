@@ -3,6 +3,7 @@ package pgxext
 import (
 	"context"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -12,12 +13,15 @@ import (
 // Shared integration-test helpers
 // ---------------------------------------------------------------------------
 
-// integrationDS returns a connected DataSource or skips the test if
-// TEST_DATABASE_URL is not set.
+// integrationDS returns a connected DataSource. Missing configuration skips a
+// developer test run, but is a failure in the required integration matrix.
 func integrationDS(t *testing.T) *DataSource {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
+		if os.Getenv("PGXEXT_REQUIRE_INTEGRATION") == "1" {
+			t.Fatal("TEST_DATABASE_URL not set while integration tests are required")
+		}
 		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
 	}
 	cfg := NewConfig()
@@ -47,6 +51,9 @@ func exec(t *testing.T, ds *DataSource, sql string, args ...any) {
 func TestNewDataSource_NilCtx(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
+		if os.Getenv("PGXEXT_REQUIRE_INTEGRATION") == "1" {
+			t.Fatal("TEST_DATABASE_URL not set while integration tests are required")
+		}
 		t.Skip("TEST_DATABASE_URL not set")
 	}
 	cfg := NewConfig()
@@ -67,6 +74,36 @@ func TestNewDataSource_Valid(t *testing.T) {
 	ds := integrationDS(t)
 	if err := ds.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping: %v", err)
+	}
+}
+
+func TestIntegrationPostgreSQLMajor(t *testing.T) {
+	expectedText := os.Getenv("TEST_POSTGRES_MAJOR")
+	if expectedText == "" {
+		if os.Getenv("PGXEXT_REQUIRE_INTEGRATION") == "1" {
+			t.Fatal("TEST_POSTGRES_MAJOR not set while integration tests are required")
+		}
+		t.Skip("TEST_POSTGRES_MAJOR not set")
+	}
+	expected, err := strconv.Atoi(expectedText)
+	if err != nil {
+		t.Fatalf("invalid TEST_POSTGRES_MAJOR %q: %v", expectedText, err)
+	}
+	ds := integrationDS(t)
+	rows, err := ds.Query(context.Background(), `SELECT current_setting('server_version_num')::integer / 10000`)
+	if err != nil {
+		t.Fatalf("query PostgreSQL major: %v", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatalf("query PostgreSQL major returned no row: %v", rows.Err())
+	}
+	var actual int
+	if err := rows.Scan(&actual); err != nil {
+		t.Fatalf("scan PostgreSQL major: %v", err)
+	}
+	if actual != expected {
+		t.Fatalf("PostgreSQL major = %d, want %d", actual, expected)
 	}
 }
 
